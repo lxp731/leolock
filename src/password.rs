@@ -1,0 +1,127 @@
+use crate::errors::{BjtError, Result};
+use argon2::{
+    password_hash::{PasswordHasher, PasswordVerifier, SaltString},
+    Argon2, PasswordHash as ArgonPasswordHash,
+};
+use rand::rngs::OsRng;
+use rpassword::read_password;
+use std::io::{self, Write};
+
+/// 密码验证器
+pub struct PasswordManager;
+
+impl PasswordManager {
+    /// 哈希密码（使用Argon2id）
+    pub fn hash_password(password: &str) -> Result<String> {
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        
+        let password_hash = argon2
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|e| BjtError::PasswordError(format!("密码哈希失败: {}", e)))?
+            .to_string();
+
+        Ok(password_hash)
+    }
+
+    /// 验证密码
+    pub fn verify_password(password: &str, stored_hash: &str) -> Result<bool> {
+        let parsed_hash = ArgonPasswordHash::new(stored_hash)
+            .map_err(|e| BjtError::PasswordError(format!("解析密码哈希失败: {}", e)))?;
+
+        let argon2 = Argon2::default();
+        Ok(argon2
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .is_ok())
+    }
+
+    /// 交互式输入密码（无回显）
+    pub fn read_password_interactive(prompt: &str) -> Result<String> {
+        print!("{}: ", prompt);
+        io::stdout().flush().map_err(|e| {
+            BjtError::PasswordError(format!("刷新输出失败: {}", e))
+        })?;
+
+        read_password().map_err(|e| {
+            BjtError::PasswordError(format!("读取密码失败: {}", e))
+        })
+    }
+
+    /// 交互式修改密码
+    pub fn change_password_interactive() -> Result<(String, String)> {
+        println!("🔄 修改密码");
+
+        // 输入旧密码
+        let old_password = Self::read_password_interactive("请输入旧密码")?;
+
+        // 输入新密码
+        let new_password = loop {
+            let pwd1 = Self::read_password_interactive("请输入新密码（至少8位）")?;
+            
+            if pwd1.len() < 8 {
+                println!("❌ 密码长度不足8位，请重新输入");
+                continue;
+            }
+
+            let pwd2 = Self::read_password_interactive("请确认新密码")?;
+            
+            if pwd1 != pwd2 {
+                println!("❌ 两次输入的密码不一致，请重新输入");
+                continue;
+            }
+
+            break pwd1;
+        };
+
+        Ok((old_password, new_password))
+    }
+
+    /// 验证密码（带重试限制）
+    pub fn verify_with_retry(
+        stored_hash: &str,
+        max_attempts: usize,
+    ) -> Result<String> {
+        for attempt in 1..=max_attempts {
+            let password = Self::read_password_interactive("请输入密码")?;
+            
+            if Self::verify_password(&password, stored_hash)? {
+                return Ok(password);
+            }
+
+            if attempt < max_attempts {
+                println!("❌ 密码错误，还剩 {} 次尝试", max_attempts - attempt);
+            } else {
+                return Err(BjtError::PasswordError(
+                    "密码错误次数过多，程序退出".to_string(),
+                ));
+            }
+        }
+
+        unreachable!()
+    }
+
+    /// 验证密码强度
+    pub fn validate_password_strength(password: &str) -> Result<()> {
+        if password.len() < 8 {
+            return Err(BjtError::ValidationError(
+                "密码长度必须至少8位".to_string(),
+            ));
+        }
+
+        // 检查是否包含数字
+        if !password.chars().any(|c| c.is_ascii_digit()) {
+            return Err(BjtError::ValidationError(
+                "密码必须包含至少一个数字".to_string(),
+            ));
+        }
+
+        // 检查是否包含字母
+        if !password.chars().any(|c| c.is_ascii_alphabetic()) {
+            return Err(BjtError::ValidationError(
+                "密码必须包含至少一个字母".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+}
