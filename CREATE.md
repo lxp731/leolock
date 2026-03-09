@@ -1,6 +1,36 @@
 
 <!-- @import "[TOC]" {cmd="toc" depthFrom=1 depthTo=6 orderedList=false} -->
 
+<!-- code_chunk_output -->
+
+- [CREATE.md - LeoLock 最终需求规格](#createmd---leolock-最终需求规格)
+  - [📋 项目概述](#-项目概述)
+  - [🎯 最终需求](#-最终需求)
+    - [1. 项目信息](#1-项目信息)
+    - [2. 核心功能需求](#2-核心功能需求)
+  - [🔄 命令结构与期望效果](#-命令结构与期望效果)
+    - [1. **初始化** (`leolock init`)](#1-初始化-leolock-init)
+    - [2. **加密文件** (`leolock encrypt`)](#2-加密文件-leolock-encrypt)
+    - [3. **解密文件** (`leolock decrypt`)](#3-解密文件-leolock-decrypt)
+    - [4. **修改密码** (`leolock password update`)](#4-修改密码-leolock-password-update)
+    - [5. **更新密钥** (`leolock key update`)](#5-更新密钥-leolock-key-update)
+    - [6. **恢复密钥** (`leolock recover`)](#6-恢复密钥-leolock-recover)
+    - [7. **帮助系统**](#7-帮助系统)
+  - [🔧 技术实现规格](#-技术实现规格)
+    - [1. 密码学算法](#1-密码学算法)
+    - [2. 文件处理](#2-文件处理)
+    - [3. 安全特性](#3-安全特性)
+    - [4. 配置管理](#4-配置管理)
+    - [5. 文件命名规范](#5-文件命名规范)
+  - [🏗️ 项目结构](#️-项目结构)
+  - [📦 依赖库](#-依赖库)
+  - [🧪 测试要求](#-测试要求)
+  - [⚠️ 重要注意事项](#️-重要注意事项)
+  - [📝 版本历史](#-版本历史)
+
+<!-- /code_chunk_output -->
+
+
 
 # CREATE.md - LeoLock 最终需求规格
 

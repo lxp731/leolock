@@ -1,6 +1,45 @@
 
 <!-- @import "[TOC]" {cmd="toc" depthFrom=1 depthTo=6 orderedList=false} -->
 
+<!-- code_chunk_output -->
+
+- [LeoLock 🔒](#leolock-)
+  - [✨ Features](#-features)
+  - [📦 Installation](#-installation)
+    - [Compile from source](#compile-from-source)
+    - [Generate Tab completions](#generate-tab-completions)
+  - [🚀 Quick Start](#-quick-start)
+    - [1. Initialize the tool](#1-initialize-the-tool)
+    - [2. Encrypt files](#2-encrypt-files)
+    - [3. Decrypt files](#3-decrypt-files)
+  - [📖 Complete Command Reference](#-complete-command-reference)
+    - [Initialization & Recovery](#initialization--recovery)
+    - [Password Management](#password-management)
+    - [Key Management](#key-management)
+    - [Encryption & Decryption](#encryption--decryption)
+    - [Help System](#help-system)
+  - [🔐 Security Features](#-security-features)
+    - [Cryptographic Algorithms](#cryptographic-algorithms)
+    - [Security Restrictions](#security-restrictions)
+    - [File Processing](#file-processing)
+  - [⚠️ Important Warnings](#️-important-warnings)
+    - [1. Backup Responsibility](#1-backup-responsibility)
+    - [2. Key Update Risks](#2-key-update-risks)
+    - [3. Password Security](#3-password-security)
+  - [📁 File Structure](#-file-structure)
+    - [User Files](#user-files)
+    - [Configuration File Example](#configuration-file-example)
+  - [🧪 Testing](#-testing)
+  - [🔧 Development](#-development)
+    - [Project Structure](#project-structure)
+    - [Building](#building)
+  - [📄 License](#-license)
+  - [🤝 Contributing](#-contributing)
+  - [📞 Support](#-support)
+
+<!-- /code_chunk_output -->
+
+
 
 # LeoLock 🔒
 
@@ -231,7 +270,9 @@ cargo clippy
 
 ## 📄 License
 
-MIT License
+<a href="https://github.com/lxp731/leolock/blob/main/LICENSE" alt="MIT LICENSE">
+    <p style="color: black">MIT LICENSE</p>
+</a>
 
 ## 🤝 Contributing
 
