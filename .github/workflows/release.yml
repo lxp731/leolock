@@ -22,15 +22,18 @@ jobs:
         include:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            archive: tar.gz
+
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
 
           - os: macos-latest
             target: x86_64-apple-darwin
-            archive: tar.gz
+
+          - os: macos-latest
+            target: aarch64-apple-darwin
 
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            archive: zip
 
     steps:
       - uses: actions/checkout@v4
@@ -43,41 +46,44 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+      - name: Install cross (for ARM Linux)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: cargo install cross
 
-      - name: Prepare artifacts
+      - name: Build
+        shell: bash
+        run: |
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            cross build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
+
+      - name: Package binary
         shell: bash
         run: |
           VERSION=${GITHUB_REF_NAME#v}
+          NAME=${{ env.BINARY }}-$VERSION-${{ matrix.target }}
+
           mkdir dist
 
           BIN=${{ env.BINARY }}
 
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-              BIN="$BIN.exe"
+            BIN="$BIN.exe"
           fi
 
           cp target/${{ matrix.target }}/release/$BIN dist/
 
-          NAME=${{ env.BINARY }}-$VERSION-${{ matrix.target }}
-
-          if [[ "${{ matrix.archive }}" == "zip" ]]; then
-              cd dist
-              zip ../$NAME.zip $BIN
-          else
-              tar -czf $NAME.tar.gz -C dist $BIN
-          fi
+          tar -czf $NAME.tar.gz -C dist $BIN
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: |
-            *.tar.gz
-            *.zip
+          path: "*.tar.gz"
 
   linux-packages:
-    name: linux packages
+    name: build deb/rpm
     runs-on: ubuntu-22.04
     needs: build
 
@@ -116,6 +122,7 @@ jobs:
             target/*.rpm
 
   release:
+    name: publish release
     runs-on: ubuntu-22.04
     needs:
       - build
@@ -125,19 +132,19 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: dist
+          path: artifacts
 
-      - name: Flatten artifacts
+      - name: Collect artifacts
         run: |
           mkdir release
-          find dist -type f -exec mv {} release/ \;
+          find artifacts -type f -exec mv {} release/ \;
 
       - name: Generate checksums
         run: |
           cd release
           sha256sum * > checksums.txt
 
-      - name: Publish GitHub Release
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
