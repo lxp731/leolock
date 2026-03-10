@@ -7,6 +7,7 @@ use std::path::Path;
 /// 工具函数集合
 pub struct Utils;
 
+#[allow(dead_code)]
 impl Utils {
     /// 交互式确认
     pub fn confirm(prompt: &str) -> Result<bool> {
@@ -30,6 +31,7 @@ impl Utils {
     }
 
     /// 解码base64盐值
+    #[allow(dead_code)]
     pub fn decode_salt(salt_str: &str) -> Result<Vec<u8>> {
         STANDARD.decode(salt_str).map_err(|e| {
             BjtError::CryptoError(format!("解码base64盐值失败: {}", e))
@@ -37,6 +39,7 @@ impl Utils {
     }
 
     /// 检查文件是否可读
+    #[allow(dead_code)]
     pub fn check_file_readable(path: &Path) -> Result<()> {
         fs::metadata(path).map_err(|e| {
             BjtError::FileError(format!("无法访问文件 {}: {}", path.display(), e))
@@ -55,6 +58,7 @@ impl Utils {
     }
 
     /// 检查文件是否可写
+    #[allow(dead_code)]
     pub fn check_file_writable(path: &Path) -> Result<()> {
         // 如果文件不存在，检查父目录是否可写
         if !path.exists() {
@@ -133,6 +137,7 @@ impl Utils {
     }
 
     /// 计算文件哈希（SHA-256）
+    #[allow(dead_code)]
     pub fn calculate_file_hash(path: &Path) -> Result<String> {
         use sha2::{Digest, Sha256};
 
@@ -146,6 +151,7 @@ impl Utils {
     }
 
     /// 显示进度条（简单版本）
+    #[allow(dead_code)]
     pub fn show_progress(current: usize, total: usize, message: &str) {
         if total == 0 {
             return;

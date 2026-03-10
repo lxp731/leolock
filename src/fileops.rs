@@ -273,11 +273,13 @@ impl FileOps {
     }
 
     /// 检查文件是否已加密（根据后缀）
+    #[allow(dead_code)]
     pub fn is_encrypted_file(path: &Path) -> bool {
         path.to_string_lossy().ends_with(".leo")
     }
 
     /// 获取文件大小（人类可读格式）
+    #[allow(dead_code)]
     pub fn get_file_size(path: &Path) -> Result<String> {
         let metadata = fs::metadata(path)?;
         let size = metadata.len();

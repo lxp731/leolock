@@ -77,6 +77,7 @@ impl PasswordManager {
     }
 
     /// 验证密码（带重试限制）
+    #[allow(dead_code)]
     pub fn verify_with_retry(
         stored_hash: &str,
         max_attempts: usize,

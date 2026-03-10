@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 const KEY_SIZE: usize = 32; // AES-256密钥大小
 const NONCE_SIZE: usize = 12; // GCM nonce大小
+#[allow(dead_code)]
 const TAG_SIZE: usize = 16; // GCM认证标签大小
 
 /// 加密器
