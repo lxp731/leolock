@@ -43,6 +43,15 @@ jobs:
           # 测试二进制文件
           ./target/release/leolock --version || echo "无法获取版本信息"
 
+      - name: Check required files
+        run: |
+          echo "=== 检查必需文件 ==="
+          ls -la target/release/leolock
+          ls -la LICENSE
+          ls -la README.md
+          ls -la README-en.md
+          echo "=== 所有文件检查完成 ==="
+
       - name: Create source archive
         run: |
           # 使用 git archive 创建干净的源码包
@@ -50,14 +59,20 @@ jobs:
             -o leolock-${{ steps.get_version.outputs.version }}.tar.gz HEAD
           
           # 创建包含构建产物的压缩包
-          tar -czf leolock-${{ steps.get_version.outputs.version }}-x86_64-linux-gnu.tar.gz \
-            -C target/release leolock \
+          echo "=== 创建二进制包 ==="
+          tar -czvf leolock-${{ steps.get_version.outputs.version }}-x86_64-linux-gnu.tar.gz \
+            target/release/leolock \
             LICENSE \
             README.md \
             README-en.md
           
+          echo "=== 文件列表 ==="
+          tar -tzf leolock-${{ steps.get_version.outputs.version }}-x86_64-linux-gnu.tar.gz
+          
           # 计算校验和
           sha256sum leolock-*.tar.gz > SHA256SUMS
+          echo "=== 校验和 ==="
+          cat SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1

@@ -42,7 +42,6 @@ jobs:
             libsystemd-dev \
             debhelper \
             dh-cargo \
-            cargo-deb \
             rpm
 
       - name: Install cargo-deb and cargo-generate-rpm
@@ -54,7 +53,14 @@ jobs:
         run: |
           cargo build --release --target ${{ matrix.target }}
           # 测试二进制文件
-          ./target/${{ matrix.target }}/release/leolock --version || true
+          if [ -f "./target/${{ matrix.target }}/release/leolock" ]; then
+            ./target/${{ matrix.target }}/release/leolock --version || true
+          elif [ -f "./target/release/leolock" ]; then
+            ./target/release/leolock --version || true
+          else
+            echo "警告：未找到 leolock 二进制文件"
+            find target -name leolock -type f
+          fi
 
       - name: Build .deb package
         run: |
@@ -78,7 +84,13 @@ jobs:
           # 复制 .rpm 文件
           cp target/generate-rpm/leolock-*.rpm artifacts/${{ matrix.target }}/ 2>/dev/null || true
           # 复制二进制文件
-          cp target/${{ matrix.target }}/release/leolock artifacts/${{ matrix.target }}/leolock-${{ matrix.target }} 2>/dev/null || true
+          if [ -f "target/${{ matrix.target }}/release/leolock" ]; then
+            cp target/${{ matrix.target }}/release/leolock artifacts/${{ matrix.target }}/leolock-${{ matrix.target }}
+          elif [ -f "target/release/leolock" ]; then
+            cp target/release/leolock artifacts/${{ matrix.target }}/leolock-${{ matrix.target }}
+          else
+            echo "警告：未找到 leolock 二进制文件用于复制"
+          fi
           
           echo "=== 生成的 artifacts ==="
           find artifacts -type f
