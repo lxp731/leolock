@@ -48,6 +48,7 @@ base64 = "0.21"
 rand = "0.8"
 getrandom = "0.2"
 sha2 = "0.10"
+shellexpand = "3.0"
 
 [profile.release]
 lto = true

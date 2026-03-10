@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::crypto::CryptoManager;
 use crate::errors::{BjtError, Result};
 use std::collections::HashSet;
@@ -5,33 +6,21 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
-/// 危险系统路径（禁止处理）
-const FORBIDDEN_PATHS: &[&str] = &[
-    "/bin", "/sbin", "/usr/bin", "/usr/sbin",
-    "/lib", "/lib64", "/usr/lib", "/usr/lib64",
-    "/boot", "/dev", "/proc", "/sys", "/run",
-    "/etc", "/root", "/var", "/tmp",
-];
-
 /// 文件操作管理器
 pub struct FileOps;
 
 impl FileOps {
     /// 检查路径是否安全
     pub fn is_safe_path(path: &Path) -> bool {
-        let canonical = match fs::canonicalize(path) {
-            Ok(p) => p,
-            Err(_) => return false,
-        };
-
-        // 检查是否在危险路径下
-        for forbidden in FORBIDDEN_PATHS {
-            if canonical.starts_with(forbidden) {
-                return false;
+        // 从配置文件加载配置
+        match Config::load() {
+            Ok(config) => config.is_safe_path(path),
+            Err(_) => {
+                // 如果加载配置失败，使用默认配置检查
+                let default_config = Config::default();
+                default_config.is_safe_path(path)
             }
         }
-
-        true
     }
 
     /// 递归加密文件夹
@@ -272,27 +261,5 @@ impl FileOps {
         }
     }
 
-    /// 检查文件是否已加密（根据后缀）
-    #[allow(dead_code)]
-    pub fn is_encrypted_file(path: &Path) -> bool {
-        path.to_string_lossy().ends_with(".leo")
-    }
 
-    /// 获取文件大小（人类可读格式）
-    #[allow(dead_code)]
-    pub fn get_file_size(path: &Path) -> Result<String> {
-        let metadata = fs::metadata(path)?;
-        let size = metadata.len();
-        
-        let units = ["B", "KB", "MB", "GB", "TB"];
-        let mut size_f64 = size as f64;
-        let mut unit_index = 0;
-        
-        while size_f64 >= 1024.0 && unit_index < units.len() - 1 {
-            size_f64 /= 1024.0;
-            unit_index += 1;
-        }
-        
-        Ok(format!("{:.2} {}", size_f64, units[unit_index]))
-    }
 }

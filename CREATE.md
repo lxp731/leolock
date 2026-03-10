@@ -34,6 +34,21 @@
 
 # CREATE.md - LeoLock 最终需求规格
 
+## 🚀 变更摘要 (2026-03-11)
+
+### 主要架构改进
+1. **统一配置系统** - 合并危险路径配置和密码/密钥配置
+2. **配置管理命令** - `config show` / `config validate` 子命令
+3. **初始化流程优化** - `init` 执行完整初始化（密码+密钥+配置）
+4. **补全命令改进** - `complete` 子命令替代 `--completions` 选项
+5. **安全设计强化** - 未初始化不能执行加密操作
+
+### 默认配置特性
+- **23个危险路径** - 保护系统关键目录
+- **10GB文件大小限制** - 防止意外加密大文件
+- **可配置性** - 所有安全设置都可自定义
+- **环境变量覆盖** - 支持运行时配置覆盖
+
 ## 📋 项目概述
 
 **LeoLock** 是一个使用 Rust 开发的 Linux 命令行文件加密工具，提供安全的 AES-256-GCM 加密解密功能，具有现代化的密码学算法和用户友好的交互界面。
@@ -59,18 +74,27 @@
 **期望效果**:
 ```bash
 $ leolock init
-🚀 开始初始化 LeoLock 工具...
-✅ 创建配置目录: "/home/knight/.config/leolock"
+🚀 开始初始化 leolock 工具...
 
 🔐 设置初始密码
 请输入密码（至少8位，包含数字和字母）: 
-请再次输入密码确认: 
+请确认密码: 
 
 🔑 生成加密密钥...
-✅ 密钥文件已保存: "/home/knight/.config/leolock/leolock.key"
+✅ 密钥生成成功
 
-📦 创建备份文件...
-✅ 备份文件已创建: "/home/knight/leolock_key_backup_20260309_193645.enc"
+📁 创建配置文件...
+✅ 已生成配置文件: /home/knight/.config/leolock/config.toml
+
+你可以编辑此文件来自定义设置:
+  - 危险路径列表 (forbidden_paths)
+  - 最大文件大小 (max_file_size)
+  - 显示进度 (show_progress)
+  - 默认扩展名 (default_extension)
+  - 密钥文件路径 (key_file_path)
+
+💾 创建备份文件...
+✅ 备份文件已创建: /home/knight/leolock_key_backup_20260311_020000.enc
 
 ⚠️  重要提醒：
 1. 请妥善保管备份文件！
@@ -188,9 +212,9 @@ $ leolock key update
 ### 6. **恢复密钥** (`leolock recover`)
 **期望效果**:
 ```bash
-$ leolock recover --backup ~/leolock_key_backup_20260309_193645.enc
+$ leolock recover --backup ~/leolock_key_backup_20260311_020000.enc
 🔄 从备份文件恢复密钥...
-备份文件: /home/knight/leolock_key_backup_20260309_193645.enc
+备份文件: /home/knight/leolock_key_backup_20260311_020000.enc
 
 🔐 验证当前操作密码
 请输入当前操作密码: 
@@ -204,10 +228,107 @@ $ leolock recover --backup ~/leolock_key_backup_20260309_193645.enc
 这将覆盖现有密钥文件，继续吗？ [y/N]: y
 
 ✅ 密钥恢复成功！
-密钥文件已保存到: "/home/knight/.config/leolock/leolock.key"
+密钥文件已保存到: "/home/knight/.config/leolock/keys.toml"
 ```
 
-### 7. **帮助系统**
+### 7. **配置管理** (`leolock config`)
+**期望效果**:
+```bash
+# 显示当前配置
+$ leolock config show
+当前配置:
+==================================================
+危险路径列表 (23 个):
+  - /bin
+  - /sbin
+  - /usr/bin
+  - /usr/sbin
+  - /lib
+  - /lib64
+  - /usr/lib
+  - /usr/lib64
+  - /boot
+  - /dev
+  - /proc
+  - /sys
+  - /run
+  - /etc
+  - /root
+  - /var
+  - /tmp
+  - /usr/local/bin
+  - /usr/local/sbin
+  - /opt
+  - /home
+  - /mnt
+  - /media
+
+最大文件大小: 10737418240 bytes (10.00 GB)
+显示进度: true
+默认扩展名: .leo
+密钥文件路径: ~/.config/leolock/keys.toml
+已初始化: true
+
+配置文件搜索路径:
+  ✓ /home/knight/.config/leolock/config.toml
+
+# 验证配置文件
+$ leolock config validate
+验证配置文件...
+✅ 配置文件格式正确
+✅ 包含 23 个危险路径
+✅ 最大文件大小: 10.00 GB
+
+路径安全检查（基于当前配置）:
+❌ 危险 /bin/ls
+❌ 危险 /etc/passwd
+❌ 危险 /tmp/test.txt
+✅ 安全 /home/user/document.txt
+✅ 安全 ./test.txt
+❌ 危险 /usr/bin/bash
+❌ 危险 /var/log/syslog
+```
+
+### 8. **补全脚本生成** (`leolock complete`)
+**期望效果**:
+```bash
+# 生成 Bash 补全脚本
+$ leolock complete bash
+_leolock() {
+    local i cur prev opts cmd
+    COMPREPLY=()
+    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+        cur="$2"
+    else
+        cur="${COMP_WORDS[COMP_CWORD]}"
+    fi
+    prev="$3"
+    cmd=""
+    opts=""
+    # ... 完整的补全脚本
+}
+
+# 生成 Zsh 补全脚本
+$ leolock complete zsh
+#compdef leolock
+autoload -U is-at-least
+_leolock() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+    # ... 完整的补全脚本
+}
+
+# 生成 Fish 补全脚本
+$ leolock complete fish
+# Print an optspec for argparse to handle cmd's options that are independent of any subcommand.
+function __fish_leolock_global_optspecs
+    string join \n h/help V/version
+end
+# ... 完整的补全脚本
+```
+
+### 9. **帮助系统**
 **期望效果**:
 ```bash
 $ leolock --help
@@ -221,8 +342,10 @@ Commands:
   recover   从备份文件恢复密钥
   password  密码管理
   key       密钥管理
+  config    配置管理
   encrypt   加密文件或文件夹
   decrypt   解密文件或文件夹
+  complete  生成shell补全脚本
   help      Print this message or the help of the given subcommand(s)
 
 Options:
@@ -250,32 +373,68 @@ Options:
 - **安全删除**: 覆盖数据后删除源文件
 
 ### 4. 配置管理
+#### 默认配置
 ```toml
-# ~/.config/leolock/leolock.conf
-suffix = ".leo"
-password_hash = "$argon2id$v=19$m=19456,t=2,p=1$盐值$哈希值"
-salt = "base64编码的随机盐值"
+# ~/.config/leolock/config.toml
+# 危险路径列表（禁止处理的系统目录）
+forbidden_paths = [
+    "/bin", "/sbin", "/usr/bin", "/usr/sbin",
+    "/lib", "/lib64", "/usr/lib", "/usr/lib64",
+    "/boot", "/dev", "/proc", "/sys", "/run",
+    "/etc", "/root", "/var", "/tmp",
+    "/usr/local/bin", "/usr/local/sbin",
+    "/opt", "/home", "/mnt", "/media",
+]
+
+# 最大文件大小（字节），0表示无限制
+max_file_size = 10737418240  # 10GB
+
+# 是否启用进度显示
+show_progress = true
+
+# 默认加密文件后缀
+default_extension = ".leo"
+
+# 密钥文件位置（支持 ~ 扩展）
+key_file_path = "~/.config/leolock/keys.toml"
 ```
 
+#### 配置特性
+1. **安全优先**: 默认包含所有关键系统目录作为危险路径
+2. **环境变量覆盖**: 
+   - `LEOLOCK_FORBIDDEN_PATHS`: 用逗号分隔的危险路径列表
+   - `LEOLOCK_MAX_FILE_SIZE`: 最大文件大小（字节）
+3. **配置文件搜索路径**（按优先级）:
+   - `.leolock.toml`（当前目录）
+   - `LEOLOCK_CONFIG` 环境变量指定的路径
+   - `~/.config/leolock/config.toml`（XDG配置目录）
+   - `~/.leolock.toml`（用户主目录）
+4. **敏感信息保护**: 密码哈希和盐值不保存到配置文件
+5. **初始化状态**: 配置加载时自动检测是否已初始化
+
 ### 5. 文件命名规范
-- **配置文件**: `leolock.conf`
-- **密钥文件**: `leolock.key`
+- **配置文件**: `config.toml`
+- **密钥文件**: `keys.toml`
 - **备份文件**: `leolock_key_backup_YYYYMMDD_HHMMSS.enc`
 - **加密文件**: `原文件名.leo`
+- **示例配置**: `examples/config.toml`
 
 ## 🏗️ 项目结构
 ```
 leolock/
 ├── Cargo.toml                    # 项目配置
+├── CREATE.md                     # 需求规格文档
+├── examples/                     # 示例文件
+│   └── config.toml               # 示例配置文件
 ├── src/                          # 源代码
 │   ├── main.rs                   # CLI入口和命令解析
-│   ├── config.rs                 # 配置管理（TOML + Argon2id）
+│   ├── config.rs                 # 统一配置管理（危险路径、文件大小等）
 │   ├── crypto.rs                 # AES-256-GCM加密/解密
 │   ├── keymgmt.rs                # 密钥管理（生成、备份、恢复）
-│   ├── fileops.rs                # 文件操作（递归、符号链接）
+│   ├── fileops.rs                # 文件操作（递归、危险路径检查）
 │   ├── password.rs               # 密码处理（Argon2id、交互式）
 │   ├── errors.rs                 # 错误类型定义
-│   └── utils.rs                  # 工具函数
+│   └── utils.rs                  # 工具函数（确认、盐值生成、安全删除）
 └── README.md                     # 用户文档
 ```
 
@@ -300,6 +459,7 @@ base64 = "0.21"
 rand = "0.8"
 getrandom = "0.2"
 sha2 = "0.10"
+shellexpand = "3.0"  # 路径扩展（支持 ~ 扩展）
 ```
 
 ## 🧪 测试要求
@@ -317,11 +477,19 @@ sha2 = "0.10"
 ## 📝 版本历史
 - **2026-03-09**: 初始需求 (TASK.md)
 - **2026-03-09**: 更新需求 (NEW_TASK.md)
-- **2026-03-09**: 最终需求 (CREATE.md)
-- **状态**: ✅ 已完成所有开发和测试
+- **2026-03-09**: 最终需求 (CREATE.md) - 初始版本
+- **2026-03-11**: 架构重构和功能增强
+  - ✅ 统一配置系统：合并危险路径配置和密码/密钥配置
+  - ✅ 配置管理命令：`leolock config show` / `leolock config validate`
+  - ✅ 初始化流程优化：`leolock init` 执行完整初始化
+  - ✅ 补全命令改进：`leolock complete` 替代 `--completions` 选项
+  - ✅ 安全设计：未初始化不能执行加密操作
+  - ✅ 代码清理：移除所有未使用的函数和导入
+  - ✅ 默认配置：包含23个危险路径，10GB文件大小限制
+- **状态**: ✅ 已完成所有开发和测试，架构稳定
 
 ---
 
-**最后更新**: 2026-03-09  
+**最后更新**: 2026-03-11  
 **作者**: Burgess Leo  
-**状态**: ✅ 需求明确，项目已完成
+**状态**: ✅ 需求明确，项目已完成，架构稳定

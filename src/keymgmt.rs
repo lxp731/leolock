@@ -45,7 +45,7 @@ impl KeyManager {
 
     /// 保存密钥到文件
     pub fn save_key(key: &[u8; 32]) -> Result<()> {
-        let key_path = Config::key_file_path()?;
+        let key_path = Config::default_key_file_path()?;
         fs::write(&key_path, key).map_err(|e| {
             BjtError::KeyError(format!("保存密钥文件失败 {}: {}", key_path.display(), e))
         })?;
@@ -65,7 +65,7 @@ impl KeyManager {
 
     /// 加载密钥文件
     pub fn load_key() -> Result<[u8; 32]> {
-        let key_path = Config::key_file_path()?;
+        let key_path = Config::default_key_file_path()?;
         
         if !key_path.exists() {
             return Err(BjtError::KeyError(

@@ -76,30 +76,7 @@ impl PasswordManager {
         Ok((old_password, new_password))
     }
 
-    /// 验证密码（带重试限制）
-    #[allow(dead_code)]
-    pub fn verify_with_retry(
-        stored_hash: &str,
-        max_attempts: usize,
-    ) -> Result<String> {
-        for attempt in 1..=max_attempts {
-            let password = Self::read_password_interactive("请输入密码")?;
-            
-            if Self::verify_password(&password, stored_hash)? {
-                return Ok(password);
-            }
 
-            if attempt < max_attempts {
-                println!("❌ 密码错误，还剩 {} 次尝试", max_attempts - attempt);
-            } else {
-                return Err(BjtError::PasswordError(
-                    "密码错误次数过多，程序退出".to_string(),
-                ));
-            }
-        }
-
-        unreachable!()
-    }
 
     /// 验证密码强度
     pub fn validate_password_strength(password: &str) -> Result<()> {

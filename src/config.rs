@@ -1,105 +1,230 @@
 use crate::errors::{BjtError, Result};
-use dirs::home_dir;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-const CONFIG_DIR_NAME: &str = ".config/leolock";
-const CONFIG_FILE_NAME: &str = "leolock.conf";
-const KEY_FILE_NAME: &str = "leolock.key";
-
-#[derive(Debug, Serialize, Deserialize)]
+/// 统一的应用程序配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// 加密文件后缀
-    pub suffix: String,
-
-    /// 密码哈希（Argon2id格式）
-    pub password_hash: String,
-
+    // === 安全设置 ===
+    
+    /// 危险路径列表（禁止处理的系统目录）
+    pub forbidden_paths: Vec<String>,
+    
+    /// 最大文件大小（字节），0表示无限制
+    pub max_file_size: u64,
+    
+    /// 是否启用进度显示
+    pub show_progress: bool,
+    
+    // === 加密设置 ===
+    
+    /// 默认加密文件后缀
+    pub default_extension: String,
+    
+    /// 密钥文件位置
+    pub key_file_path: String,
+    
+    // === 密码和密钥设置（敏感信息，不保存到文件）===
+    
+    /// 密码哈希（Argon2id）
+    #[serde(skip)]
+    pub password_hash: Option<String>,
+    
     /// 盐值（base64编码）
-    pub salt: String,
+    #[serde(skip)]
+    pub salt: Option<String>,
+    
+    /// 是否已初始化
+    #[serde(skip)]
+    pub initialized: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            suffix: ".leo".to_string(),
-            password_hash: String::new(),
-            salt: String::new(),
+            forbidden_paths: vec![
+                "/bin".to_string(),
+                "/sbin".to_string(),
+                "/usr/bin".to_string(),
+                "/usr/sbin".to_string(),
+                "/lib".to_string(),
+                "/lib64".to_string(),
+                "/usr/lib".to_string(),
+                "/usr/lib64".to_string(),
+                "/boot".to_string(),
+                "/dev".to_string(),
+                "/proc".to_string(),
+                "/sys".to_string(),
+                "/run".to_string(),
+                "/etc".to_string(),
+                "/root".to_string(),
+                "/var".to_string(),
+                "/tmp".to_string(),
+                "/usr/local/bin".to_string(),
+                "/usr/local/sbin".to_string(),
+                "/opt".to_string(),
+                "/home".to_string(),
+                "/mnt".to_string(),
+                "/media".to_string(),
+            ],
+            max_file_size: 10 * 1024 * 1024 * 1024, // 10GB
+            show_progress: true,
+            default_extension: ".leo".to_string(),
+            key_file_path: "~/.config/leolock/keys.toml".to_string(),
+            password_hash: None,
+            salt: None,
+            initialized: false,
         }
     }
 }
 
 impl Config {
-    /// 获取配置目录路径
-    pub fn config_dir() -> Result<PathBuf> {
-        let home = home_dir().ok_or_else(|| {
-            BjtError::ConfigError("无法获取用户家目录".to_string())
-        })?;
-        Ok(home.join(CONFIG_DIR_NAME))
-    }
-
-    /// 获取配置文件路径
-    pub fn config_file_path() -> Result<PathBuf> {
-        Ok(Self::config_dir()?.join(CONFIG_FILE_NAME))
-    }
-
-    /// 获取密钥文件路径
-    pub fn key_file_path() -> Result<PathBuf> {
-        Ok(Self::config_dir()?.join(KEY_FILE_NAME))
-    }
-
-    /// 创建配置目录
-    pub fn create_config_dir() -> Result<()> {
-        let config_dir = Self::config_dir()?;
-        if !config_dir.exists() {
-            fs::create_dir_all(&config_dir).map_err(|e| {
-                BjtError::ConfigError(format!("创建配置目录失败: {}", e))
-            })?;
-            println!("✅ 创建配置目录: {:?}", config_dir);
-        }
-        Ok(())
-    }
-
+    // === 配置文件管理 ===
+    
     /// 加载配置文件
     pub fn load() -> Result<Self> {
-        let config_path = Self::config_file_path()?;
-        if !config_path.exists() {
-            return Err(BjtError::ConfigError(
-                "配置文件不存在，请先运行 'leolock init'".to_string(),
-            ));
-        }
-
-        let content = fs::read_to_string(&config_path).map_err(|e| {
-            BjtError::ConfigError(format!("读取配置文件失败: {}", e))
-        })?;
-
-        toml::from_str(&content).map_err(|e| {
-            BjtError::ConfigError(format!("解析配置文件失败: {}", e))
-        })
-    }
-
-    /// 保存配置文件
-    pub fn save(&self) -> Result<()> {
-        Self::create_config_dir()?;
+        // 1. 尝试从环境变量获取配置文件路径
+        let config_paths = Self::get_config_paths();
         
-        let config_path = Self::config_file_path()?;
-        let content = toml::to_string_pretty(self).map_err(|e| {
+        for path in config_paths {
+            if path.exists() {
+                let content = fs::read_to_string(&path)?;
+                let mut config: Config = toml::from_str(&content).map_err(|e| {
+                    BjtError::ConfigError(format!("解析配置文件失败 {}: {}", path.display(), e))
+                })?;
+                
+                // 标记为已加载配置文件
+                config.initialized = true;
+                return Ok(config);
+            }
+        }
+        
+        // 2. 使用默认配置（未初始化状态）
+        Ok(Config::default())
+    }
+    
+    /// 获取可能的配置文件路径
+    pub fn get_config_paths() -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        
+        // 1. 当前目录的配置文件
+        paths.push(PathBuf::from(".leolock.toml"));
+        
+        // 2. 从环境变量获取
+        if let Ok(env_path) = std::env::var("LEOLOCK_CONFIG") {
+            paths.push(PathBuf::from(env_path));
+        }
+        
+        // 3. XDG 配置目录
+        if let Some(config_dir) = dirs::config_dir() {
+            paths.push(config_dir.join("leolock").join("config.toml"));
+        }
+        
+        // 4. 用户主目录
+        if let Some(home_dir) = dirs::home_dir() {
+            paths.push(home_dir.join(".leolock.toml"));
+            paths.push(home_dir.join(".config").join("leolock.toml"));
+        }
+        
+        paths
+    }
+    
+    /// 保存配置文件（只保存非敏感设置）
+    pub fn save(&self) -> Result<()> {
+        let config_dir = Self::get_default_config_dir()?;
+        
+        // 确保目录存在
+        fs::create_dir_all(&config_dir)?;
+        
+        let config_path = config_dir.join("config.toml");
+        
+        // 创建只包含非敏感设置的配置
+        let safe_config = SafeConfig {
+            forbidden_paths: self.forbidden_paths.clone(),
+            max_file_size: self.max_file_size,
+            show_progress: self.show_progress,
+            default_extension: self.default_extension.clone(),
+            key_file_path: self.key_file_path.clone(),
+        };
+        
+        let content = toml::to_string_pretty(&safe_config).map_err(|e| {
             BjtError::ConfigError(format!("序列化配置失败: {}", e))
         })?;
-
-        fs::write(&config_path, content).map_err(|e| {
-            BjtError::ConfigError(format!("写入配置文件失败: {}", e))
-        })?;
-
-        println!("✅ 配置文件已保存: {:?}", config_path);
+        
+        fs::write(config_path, content)?;
         Ok(())
     }
-
-    /// 检查是否已初始化
-    pub fn is_initialized() -> bool {
-        Self::config_file_path()
-            .map(|p| p.exists())
-            .unwrap_or(false)
+    
+    /// 获取默认配置目录
+    pub fn get_default_config_dir() -> Result<PathBuf> {
+        if let Some(config_dir) = dirs::config_dir() {
+            Ok(config_dir.join("leolock"))
+        } else if let Some(home_dir) = dirs::home_dir() {
+            Ok(home_dir.join(".config").join("leolock"))
+        } else {
+            Err(BjtError::ConfigError("无法确定配置目录".to_string()))
+        }
     }
+    
+    /// 检查工具是否已初始化
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
+    }
+    
+    /// 获取配置目录路径
+    pub fn config_dir() -> Result<PathBuf> {
+        Self::get_default_config_dir()
+    }
+    
+    /// 获取密钥文件路径
+    pub fn key_file_path(&self) -> Result<PathBuf> {
+        let path_str = shellexpand::full(&self.key_file_path).map_err(|e| {
+            BjtError::ConfigError(format!("展开路径失败: {}", e))
+        })?;
+        Ok(PathBuf::from(path_str.to_string()))
+    }
+    
+    /// 静态方法：获取默认密钥文件路径
+    pub fn default_key_file_path() -> Result<PathBuf> {
+        let config = Config::load()?;
+        config.key_file_path()
+    }
+    
+    /// 创建配置目录
+    pub fn create_config_dir() -> Result<()> {
+        let config_dir = Self::get_default_config_dir()?;
+        fs::create_dir_all(&config_dir)?;
+        Ok(())
+    }
+    
+    // === 安全路径检查 ===
+    
+    /// 检查路径是否安全（不在危险路径中）
+    pub fn is_safe_path(&self, path: &Path) -> bool {
+        let canonical = match fs::canonicalize(path) {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
+        
+        for forbidden in &self.forbidden_paths {
+            if canonical.starts_with(forbidden) {
+                return false;
+            }
+        }
+        
+        true
+    }
+    
+
+}
+
+/// 安全配置（只包含可以保存到文件的非敏感设置）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SafeConfig {
+    pub forbidden_paths: Vec<String>,
+    pub max_file_size: u64,
+    pub show_progress: bool,
+    pub default_extension: String,
+    pub key_file_path: String,
 }

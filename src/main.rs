@@ -36,10 +36,6 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// 生成shell补全脚本
-    #[arg(long = "completions", hide = true)]
-    shell: Option<Shell>,
-
     /// 显示帮助信息
     #[arg(short, long, global = true)]
     help: bool,
@@ -65,6 +61,10 @@ enum Commands {
     #[command(subcommand)]
     Key(KeyCommands),
 
+    /// 配置管理
+    #[command(subcommand)]
+    Config(ConfigCommands),
+
     /// 加密文件或文件夹
     Encrypt {
         /// 要加密的文件或文件夹路径
@@ -84,6 +84,13 @@ enum Commands {
         #[arg(long)]
         keep_original: bool,
     },
+
+    /// 生成shell补全脚本
+    Complete {
+        /// Shell类型
+        #[arg(value_enum)]
+        shell: Shell,
+    },
 }
 
 #[derive(Subcommand)]
@@ -98,14 +105,17 @@ enum KeyCommands {
     Update,
 }
 
+/// 配置管理命令
+#[derive(Subcommand)]
+enum ConfigCommands {
+    /// 显示当前配置
+    Show,
+    /// 验证配置文件
+    Validate,
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-
-    // 处理补全生成
-    if let Some(shell) = cli.shell {
-        generate_completions(shell);
-        return Ok(());
-    }
 
     // 显示帮助信息
     if cli.help && cli.command.is_none() {
@@ -123,8 +133,16 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Key(cmd)) => match cmd {
             KeyCommands::Update => Ok(handle_key_update()?),
         },
+        Some(Commands::Config(cmd)) => match cmd {
+            ConfigCommands::Show => Ok(handle_config_show()?),
+            ConfigCommands::Validate => Ok(handle_config_validate()?),
+        },
         Some(Commands::Encrypt { path, keep_original }) => Ok(handle_encrypt(&path, keep_original)?),
         Some(Commands::Decrypt { path, keep_original }) => Ok(handle_decrypt(&path, keep_original)?),
+        Some(Commands::Complete { shell }) => {
+            generate_completions(shell);
+            Ok(())
+        },
         None => {
             let mut cmd = Cli::command();
             cmd.print_help()?;
@@ -136,7 +154,8 @@ fn main() -> anyhow::Result<()> {
 /// 处理初始化命令
 fn handle_init() -> Result<()> {
     // 检查是否已初始化
-    if Config::is_initialized() {
+    let config = Config::load()?;
+    if config.is_initialized() {
         println!("⚠️  工具已经初始化");
         println!("配置目录: {:?}", Config::config_dir()?);
         return Ok(());
@@ -177,12 +196,23 @@ fn handle_init() -> Result<()> {
     let password_hash = PasswordManager::hash_password(&password)?;
     let salt = Utils::generate_salt()?;
     
-    let config = Config {
-        suffix: ".leo".to_string(),
-        password_hash,
-        salt,
-    };
+    // 创建配置并保存
+    let mut config = Config::default();
+    config.password_hash = Some(password_hash);
+    config.salt = Some(salt);
+    config.initialized = true;
     config.save()?;
+    
+    let config_dir = Config::get_default_config_dir()?;
+    let config_path = config_dir.join("config.toml");
+    
+    println!("✅ 已生成配置文件: {}", config_path.display());
+    println!("\n你可以编辑此文件来自定义设置:");
+    println!("  - 危险路径列表 (forbidden_paths)");
+    println!("  - 最大文件大小 (max_file_size)");
+    println!("  - 显示进度 (show_progress)");
+    println!("  - 默认扩展名 (default_extension)");
+    println!("  - 密钥文件路径 (key_file_path)");
 
     // 5. 创建备份文件
     println!("\n💾 创建备份文件...");
@@ -207,15 +237,19 @@ fn handle_recover(backup_path: &PathBuf) -> Result<()> {
     // 所以我们需要：验证当前密码，然后询问备份密码
     
     // 1. 如果已初始化，验证当前操作密码
-    if Config::is_initialized() {
+    let config = Config::load()?;
+    if config.is_initialized() {
         println!("\n🔐 验证当前操作密码");
         let current_password = PasswordManager::read_password_interactive("请输入当前操作密码")?;
         
-        let config = Config::load()?;
-        if !PasswordManager::verify_password(&current_password, &config.password_hash)? {
-            return Err(BjtError::PasswordError("当前操作密码错误".to_string()));
+        if let Some(password_hash) = &config.password_hash {
+            if !PasswordManager::verify_password(&current_password, password_hash)? {
+                return Err(BjtError::PasswordError("当前操作密码错误".to_string()));
+            }
+            println!("✅ 当前操作密码验证通过");
+        } else {
+            return Err(BjtError::ConfigError("配置文件中缺少密码哈希".to_string()));
         }
-        println!("✅ 当前操作密码验证通过");
     }
 
     // 2. 询问备份密码（可能是初始密码或旧密码）
@@ -227,7 +261,7 @@ fn handle_recover(backup_path: &PathBuf) -> Result<()> {
     let key = KeyManager::recover_from_backup(backup_path, &backup_password)?;
 
     // 4. 检查是否已存在配置
-    if Config::is_initialized() {
+    if config.is_initialized() {
         println!("\n⚠️  检测到现有配置");
         if !Utils::confirm("这将覆盖现有密钥文件，继续吗？")? {
             println!("恢复操作已取消");
@@ -239,7 +273,7 @@ fn handle_recover(backup_path: &PathBuf) -> Result<()> {
     KeyManager::save_key(&key)?;
 
     println!("\n✅ 密钥恢复成功！");
-    println!("密钥文件已保存到: {:?}", Config::key_file_path()?);
+    println!("密钥文件已保存到: {:?}", Config::default_key_file_path()?);
     
     Ok(())
 }
@@ -247,26 +281,28 @@ fn handle_recover(backup_path: &PathBuf) -> Result<()> {
 /// 处理密码修改命令
 fn handle_password_update() -> Result<()> {
     // 检查是否已初始化
-    if !Config::is_initialized() {
+    let mut config = Config::load()?;
+    if !config.is_initialized() {
         return Err(BjtError::ConfigError(
             "工具未初始化，请先运行 'leolock init'".to_string(),
         ));
     }
 
-    // 加载配置
-    let mut config = Config::load()?;
-
     // 交互式修改密码
     let (old_password, new_password) = PasswordManager::change_password_interactive()?;
 
     // 验证旧密码
-    if !PasswordManager::verify_password(&old_password, &config.password_hash)? {
-        return Err(BjtError::PasswordError("旧密码错误".to_string()));
+    if let Some(password_hash) = &config.password_hash {
+        if !PasswordManager::verify_password(&old_password, password_hash)? {
+            return Err(BjtError::PasswordError("旧密码错误".to_string()));
+        }
+    } else {
+        return Err(BjtError::ConfigError("配置文件中缺少密码哈希".to_string()));
     }
 
     // 更新密码哈希
-    config.password_hash = PasswordManager::hash_password(&new_password)?;
-    config.salt = Utils::generate_salt()?;
+    config.password_hash = Some(PasswordManager::hash_password(&new_password)?);
+    config.salt = Some(Utils::generate_salt()?);
     config.save()?;
 
     println!("\n✅ 密码修改成功！");
@@ -277,7 +313,8 @@ fn handle_password_update() -> Result<()> {
 /// 处理密钥更新命令
 fn handle_key_update() -> Result<()> {
     // 检查是否已初始化
-    if !Config::is_initialized() {
+    let config = Config::load()?;
+    if !config.is_initialized() {
         return Err(BjtError::ConfigError(
             "工具未初始化，请先运行 'leolock init'".to_string(),
         ));
@@ -298,9 +335,12 @@ fn handle_key_update() -> Result<()> {
         let password = PasswordManager::read_password_interactive("密码")?;
         
         // 验证密码
-        let config = Config::load()?;
-        if !PasswordManager::verify_password(&password, &config.password_hash)? {
-            return Err(BjtError::PasswordError("密码错误".to_string()));
+        if let Some(password_hash) = &config.password_hash {
+            if !PasswordManager::verify_password(&password, password_hash)? {
+                return Err(BjtError::PasswordError("密码错误".to_string()));
+            }
+        } else {
+            return Err(BjtError::ConfigError("配置文件中缺少密码哈希".to_string()));
         }
         
         // 创建备份
@@ -313,7 +353,7 @@ fn handle_key_update() -> Result<()> {
     println!("\n⚠️  重要提醒：");
     println!("1. 旧密钥加密的所有文件将无法解密！");
     println!("2. 旧的备份文件已失效！");
-    println!("3. 请立即备份新密钥文件: {:?}", Config::key_file_path()?);
+    println!("3. 请立即备份新密钥文件: {:?}", config.key_file_path()?);
     println!("4. 建议手动复制密钥文件到安全位置");
     
     Ok(())
@@ -322,7 +362,8 @@ fn handle_key_update() -> Result<()> {
 /// 处理加密命令
 fn handle_encrypt(path: &PathBuf, keep_original: bool) -> Result<()> {
     // 检查是否已初始化
-    if !Config::is_initialized() {
+    let config = Config::load()?;
+    if !config.is_initialized() {
         return Err(BjtError::ConfigError(
             "工具未初始化，请先运行 'leolock init'".to_string(),
         ));
@@ -332,10 +373,13 @@ fn handle_encrypt(path: &PathBuf, keep_original: bool) -> Result<()> {
     println!("🔐 加密操作需要验证密码");
     let password = PasswordManager::read_password_interactive("请输入密码")?;
 
-    // 加载配置和验证密码
-    let config = Config::load()?;
-    if !PasswordManager::verify_password(&password, &config.password_hash)? {
-        return Err(BjtError::PasswordError("密码错误".to_string()));
+    // 验证密码
+    if let Some(password_hash) = &config.password_hash {
+        if !PasswordManager::verify_password(&password, password_hash)? {
+            return Err(BjtError::PasswordError("密码错误".to_string()));
+        }
+    } else {
+        return Err(BjtError::ConfigError("配置文件中缺少密码哈希".to_string()));
     }
 
     // 加载密钥
@@ -350,7 +394,8 @@ fn handle_encrypt(path: &PathBuf, keep_original: bool) -> Result<()> {
 /// 处理解密命令
 fn handle_decrypt(path: &PathBuf, keep_original: bool) -> Result<()> {
     // 检查是否已初始化
-    if !Config::is_initialized() {
+    let config = Config::load()?;
+    if !config.is_initialized() {
         return Err(BjtError::ConfigError(
             "工具未初始化，请先运行 'leolock init'".to_string(),
         ));
@@ -360,10 +405,13 @@ fn handle_decrypt(path: &PathBuf, keep_original: bool) -> Result<()> {
     println!("🔐 解密操作需要验证密码");
     let password = PasswordManager::read_password_interactive("请输入密码")?;
 
-    // 加载配置和验证密码
-    let config = Config::load()?;
-    if !PasswordManager::verify_password(&password, &config.password_hash)? {
-        return Err(BjtError::PasswordError("密码错误".to_string()));
+    // 验证密码
+    if let Some(password_hash) = &config.password_hash {
+        if !PasswordManager::verify_password(&password, password_hash)? {
+            return Err(BjtError::PasswordError("密码错误".to_string()));
+        }
+    } else {
+        return Err(BjtError::ConfigError("配置文件中缺少密码哈希".to_string()));
     }
 
     // 加载密钥
@@ -378,4 +426,76 @@ fn handle_decrypt(path: &PathBuf, keep_original: bool) -> Result<()> {
 fn generate_completions(shell: Shell) {
     let mut cmd = Cli::command();
     let _script = clap_complete::generate(shell, &mut cmd, "leolock", &mut std::io::stdout());
+}
+
+/// 显示当前配置
+fn handle_config_show() -> Result<()> {
+    let config = config::Config::load()?;
+    
+    println!("当前配置:");
+    println!("{}", "=".repeat(50));
+    
+    println!("危险路径列表 ({} 个):", config.forbidden_paths.len());
+    for path in &config.forbidden_paths {
+        println!("  - {}", path);
+    }
+    
+    println!("\n最大文件大小: {} bytes ({:.2} GB)", 
+        config.max_file_size,
+        config.max_file_size as f64 / 1024.0 / 1024.0 / 1024.0
+    );
+    
+    println!("显示进度: {}", config.show_progress);
+    println!("默认扩展名: {}", config.default_extension);
+    println!("密钥文件路径: {}", config.key_file_path);
+    println!("已初始化: {}", config.is_initialized());
+    
+    println!("\n配置文件搜索路径:");
+    for path in config::Config::get_config_paths() {
+        if path.exists() {
+            println!("  ✓ {}", path.display());
+        } else {
+            println!("  - {}", path.display());
+        }
+    }
+    
+    Ok(())
+}
+
+/// 生成默认配置文件
+
+
+/// 验证配置文件
+fn handle_config_validate() -> Result<()> {
+    println!("验证配置文件...");
+    
+    let config = config::Config::load()?;
+    
+    println!("✅ 配置文件格式正确");
+    println!("✅ 包含 {} 个危险路径", config.forbidden_paths.len());
+    println!("✅ 最大文件大小: {:.2} GB", 
+        config.max_file_size as f64 / 1024.0 / 1024.0 / 1024.0
+    );
+    
+    // 测试几个常见路径（基于实际配置检查）
+    let test_paths = [
+        "/bin/ls",
+        "/etc/passwd", 
+        "/tmp/test.txt",
+        "/home/user/document.txt",
+        "./test.txt",
+        "/usr/bin/bash",
+        "/var/log/syslog",
+    ];
+    
+    println!("\n路径安全检查（基于当前配置）:");
+    for path_str in test_paths {
+        let path = std::path::Path::new(path_str);
+        let is_safe = config.is_safe_path(path);
+        let status = if is_safe { "✅ 安全" } else { "❌ 危险" };
+        
+        println!("{} {}", status, path_str);
+    }
+    
+    Ok(())
 }
