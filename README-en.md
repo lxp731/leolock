@@ -76,13 +76,19 @@ sudo cp target/release/leolock /usr/local/bin/
 
 ```bash
 # Bash
-./target/release/leolock --completions bash > ~/.bash_completion.d/leolock
+mkdir -p ~/.bash_completion.d
+leolock --completions bash > ~/.bash_completion.d/leolock
+source ~/.bash_completion.d/leolock
 
 # Zsh
-./target/release/leolock --completions zsh > ~/.zsh/completions/_leolock
+mkdir -p ~/.zsh/completions
+leolock --completions zsh > ~/.zsh/completions/_leolock
+source ~/.zsh/completions/_leolock
 
 # Fish
-./target/release/leolock --completions fish > ~/.config/fish/completions/leolock.fish
+mkdir -p ~/.config/fish/completions
+leolock --completions fish > ~/.config/fish/completions/leolock.fish
+source ~/.config/fish/completions/leolock.fish
 ```
 
 ## 🚀 Quick Start
