@@ -294,8 +294,3 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-        # 添加对RPM和DEB包发布的支持
-      - name: Check for RPM and DEB artifacts
-        run: |
-          echo "Checking for RPM and DEB artifacts in release..."
-          find artifacts -type f -name "*.rpm" -o -name "*.deb"
