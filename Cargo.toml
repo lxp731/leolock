@@ -9,18 +9,25 @@ repository = "https://github.com/lxp731/leolock.git"
 
 [package.metadata.deb]
 maintainer = "Burgess Leo liuxiaopeng731@gmail.com"
-copyright = "2026, Your Name liuxiaopeng731@gmail.com"
+copyright = "2026, Burgess Leo liuxiaopeng731@gmail.com"
 license-file = ["LICENSE", "4"]
-extended-description = "None."
+extended-description = "LeoLock - 安全的文件加密解密工具"
 depends = "$auto"
 section = "utility"
 priority = "optional"
+assets = [
+ { source = "target/release/leolock", dest = "/usr/bin/leolock", mode = "755" },
+ { source = "README.md", dest = "/usr/share/doc/leolock/README", mode = "644", doc = true },
+]
 
 [package.metadata.generate-rpm]
 assets = [
  { source = "target/release/leolock", dest = "/usr/bin/leolock", mode = "755" },
- { source = "README.md", dest = "/usr/share/doc/myapp/README", mode = "644", doc = true },
+ { source = "README.md", dest = "/usr/share/doc/leolock/README", mode = "644", doc = true },
 ]
+name = "leolock"
+summary = "LeoLock - 安全的文件加密解密工具"
+license = "MIT"
 
 [dependencies]
 clap = { version = "4.0", features = ["derive", "env"] }
