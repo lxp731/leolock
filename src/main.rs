@@ -20,7 +20,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(
     name = "leolock",
-    version = "1.0.1",
+    version = "1.0.0",
     about = "文件加密解密工具",
     long_about = "一个安全的文件加密解密工具，使用AES-256-GCM加密算法和Argon2id密码哈希",
     disable_help_flag = true,
