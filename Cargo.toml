@@ -1,6 +1,6 @@
 [package]
 name = "leolock"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 description = "LeoLock - 安全的文件加密解密工具"
 authors = ["Burgess Leo"]
