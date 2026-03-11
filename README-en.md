@@ -6,11 +6,10 @@
 - [LeoLock 🔒](#leolock-)
   - [🚀 Latest Architecture (2026-03-11)](#-latest-architecture-2026-03-11)
     - [Major Improvements](#major-improvements)
-    - [Default Configuration Features](#default-configuration-features)
   - [✨ Features](#-features)
   - [📦 Installation](#-installation)
     - [Compile from source](#compile-from-source)
-    - [Generate Tab completions](#generate-tab-completions)
+    - [Tab completions](#tab-completions)
   - [🚀 Quick Start](#-quick-start)
     - [1. Initialize the tool](#1-initialize-the-tool)
     - [2. Encrypt files](#2-encrypt-files)
@@ -28,6 +27,8 @@
     - [Security Restrictions](#security-restrictions)
     - [File Processing](#file-processing)
     - [Configuration Management](#configuration-management-1)
+      - [Default Configuration](#default-configuration)
+      - [Configuration Features](#configuration-features)
   - [⚠️ Important Warnings](#️-important-warnings)
     - [1. Backup Responsibility](#1-backup-responsibility)
     - [2. Key Update Risks](#2-key-update-risks)
@@ -37,10 +38,6 @@
     - [User Files](#user-files)
     - [Configuration File Example](#configuration-file-example)
     - [Project Structure](#project-structure)
-  - [🧪 Testing](#-testing)
-  - [🔧 Development](#-development)
-    - [Version Management](#version-management)
-    - [Building](#building)
   - [📄 License](#-license)
   - [🤝 Contributing](#-contributing)
   - [📞 Support](#-support)
@@ -96,23 +93,18 @@ cargo build --release
 sudo cp target/release/leolock /usr/local/bin/
 ```
 
-### Generate Tab completions
+### Tab completions
 
 ```bash
+# Install completions by default
 # Bash
-mkdir -p ~/.bash_completion.d
-leolock complete bash > ~/.bash_completion.d/leolock
-source ~/.bash_completion.d/leolock
+/usr/share/bash-completion/completions/leolock
 
 # Zsh
-mkdir -p ~/.zsh/completions
-leolock complete zsh > ~/.zsh/completions/_leolock
-source ~/.zsh/completions/_leolock
+/usr/share/zsh/site-functions/_leolock
 
 # Fish
-mkdir -p ~/.config/fish/completions
-leolock complete fish > ~/.config/fish/completions/leolock.fish
-source ~/.config/fish/completions/leolock.fish
+/usr/share/fish/vendor_completions.d/leolock.fish
 ```
 
 ## 🚀 Quick Start

@@ -7,7 +7,7 @@
   - [✨ 特性](#-特性)
   - [📦 安装](#-安装)
     - [从源码编译](#从源码编译)
-    - [生成 Tab 补全](#生成-tab-补全)
+    - [Tab 补全](#tab-补全)
   - [🚀 快速开始](#-快速开始)
     - [1. 初始化工具](#1-初始化工具)
     - [2. 加密文件](#2-加密文件)
@@ -82,23 +82,18 @@ cargo build --release
 sudo cp target/release/leolock /usr/local/bin/
 ```
 
-### 生成 Tab 补全
+### Tab 补全
 
 ```bash
+# 默认安装了补全脚本
 # Bash
-mkdir -p ~/.bash_completion.d
-leolock complete bash > ~/.bash_completion.d/leolock
-source ~/.bash_completion.d/leolock
+/usr/share/bash-completion/completions/leolock
 
 # Zsh
-mkdir -p ~/.zsh/completions
-leolock complete zsh > ~/.zsh/completions/_leolock
-source ~/.zsh/completions/_leolock
+/usr/share/zsh/site-functions/_leolock
 
 # Fish
-mkdir -p ~/.config/fish/completions
-leolock complete fish > ~/.config/fish/completions/leolock.fish
-source ~/.config/fish/completions/leolock.fish
+/usr/share/fish/vendor_completions.d/leolock.fish
 ```
 
 ## 🚀 快速开始
