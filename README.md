@@ -6,8 +6,10 @@
 - [LeoLock 🔒](#leolock-)
   - [✨ 特性](#-特性)
   - [📦 安装](#-安装)
+    - [Debian/Ubuntu/RHEL/Fedora](#debianubunturhelfedora)
+    - [AUR](#aur)
     - [从源码编译](#从源码编译)
-    - [Tab 补全](#tab-补全)
+    - [生成 Tab 补全](#生成-tab-补全)
   - [🚀 快速开始](#-快速开始)
     - [1. 初始化工具](#1-初始化工具)
     - [2. 加密文件](#2-加密文件)
@@ -68,6 +70,18 @@
 
 ## 📦 安装
 
+### Debian/Ubuntu/RHEL/Fedora
+
+```bash
+# 在仓库下载 .deb 包或者 .rpm 包
+```
+
+### AUR
+
+```bash
+yay -S leolock
+```
+
 ### 从源码编译
 
 ```bash
@@ -82,10 +96,19 @@ cargo build --release
 sudo cp target/release/leolock /usr/local/bin/
 ```
 
-### Tab 补全
+### 生成 Tab 补全
 
 ```bash
-# 默认安装了补全脚本
+# Bash
+leolock complete bash > /usr/share/bash-completion/completions/leolock
+
+# Zsh
+leolock complete zsh > /usr/share/zsh/site-functions/_leolock
+
+# Fish
+leolock complete fish > /usr/share/fish/vendor_completions.d/leolock.fish
+
+# 使用 AUR 默认会安装了补全脚本
 # Bash
 /usr/share/bash-completion/completions/leolock
 

@@ -8,8 +8,10 @@
     - [Major Improvements](#major-improvements)
   - [✨ Features](#-features)
   - [📦 Installation](#-installation)
+    - [Debian/Ubuntu/RHEL/Fedora](#debianubunturhelfedora)
+    - [AUR](#aur)
     - [Compile from source](#compile-from-source)
-    - [Tab completions](#tab-completions)
+    - [Generate Tab completions](#generate-tab-completions)
   - [🚀 Quick Start](#-quick-start)
     - [1. Initialize the tool](#1-initialize-the-tool)
     - [2. Encrypt files](#2-encrypt-files)
@@ -79,6 +81,18 @@ A secure file encryption/decryption command-line tool using AES-256-GCM encrypti
 
 ## 📦 Installation
 
+### Debian/Ubuntu/RHEL/Fedora
+
+```bash
+# Install .deb or .rpm package from github release.
+```
+
+### AUR
+
+```bash
+yay -S leolock
+```
+
 ### Compile from source
 
 ```bash
@@ -93,10 +107,19 @@ cargo build --release
 sudo cp target/release/leolock /usr/local/bin/
 ```
 
-### Tab completions
+### Generate Tab completions
 
 ```bash
-# Install completions by default
+# Bash
+leolock complete bash > /usr/share/bash-completion/completions/leolock
+
+# Zsh
+leolock complete zsh > /usr/share/zsh/site-functions/_leolock
+
+# Fish
+leolock complete fish > /usr/share/fish/vendor_completions.d/leolock.fish
+
+# 使用 AUR 默认会安装了补全脚本
 # Bash
 /usr/share/bash-completion/completions/leolock
 
