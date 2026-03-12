@@ -3,23 +3,23 @@
 
 # 危险路径列表（禁止处理的系统目录）
 forbidden_paths = [
-    "/bin",
-    "/sbin", 
-    "/usr/bin",
-    "/usr/sbin",
-    "/lib",
-    "/lib64",
-    "/usr/lib",
-    "/usr/lib64",
-    "/boot",
-    "/dev",
-    "/proc",
-    "/sys",
-    "/run",
-    "/etc",
-    "/root",
-    "/var",
-    "/tmp",
+    "/bin",      # 系统二进制文件
+    "/sbin",     # 系统管理二进制文件
+    "/usr/bin",  # 用户二进制文件
+    "/usr/sbin", # 用户系统管理二进制文件
+    "/lib",      # 系统库文件
+    "/lib64",    # 64位系统库文件
+    "/usr/lib",  # 用户库文件
+    "/usr/lib64",# 64位用户库文件
+    "/boot",     # 引导文件
+    "/dev",      # 设备文件
+    "/proc",     # 进程信息
+    "/sys",      # 系统信息
+    "/run",      # 运行时文件
+    "/etc",      # 配置文件
+    "/root",     # root用户家目录
+    "/var",      # 变量文件
+    "/tmp",      # 临时文件
     # 可以根据需要添加更多路径
     # "/home/user/important",
     # "/mnt/backup",
@@ -37,6 +37,50 @@ default_extension = ".leo"
 # 密钥文件位置（支持 ~ 扩展）
 key_file_path = "~/.config/leolock/keys.toml"
 
+# 密码文件位置（存储密码哈希）
+password_file_path = "~/.config/leolock/password.bin"
+
+# 是否保留原文件名（false=加密文件名，true=保留文件名）
+# 默认加密文件名以增强隐私保护
+# 设置为 true 时：test.txt → test.txt.leo（文件名可见）
+# 设置为 false 时：test.txt → a1b2c3d4e5f6.leo（文件名加密为哈希）
+preserve_original_filename = false
+
+# 加密文件格式版本
+# 1 = 旧版格式（无文件名加密）
+# 2 = 新版格式（支持文件名加密）
+# 注意：版本2文件包含加密的文件名元数据，解密时可恢复原文件名
+file_format_version = 2
+
 # 可选：自定义危险路径（通过环境变量覆盖）
 # 设置环境变量：export LEOLOCK_FORBIDDEN_PATHS="/custom/path1,/custom/path2"
 # 设置环境变量：export LEOLOCK_MAX_FILE_SIZE=5368709120  # 5GB
+
+# ============================================================================
+# 使用示例
+# ============================================================================
+
+# 示例1：保留文件名（向后兼容模式）
+# preserve_original_filename = true
+# file_format_version = 1  # 或 2（版本2也支持保留文件名）
+# 加密结果：test.txt → test.txt.leo
+
+# 示例2：加密文件名（隐私保护模式）
+# preserve_original_filename = false
+# file_format_version = 2
+# 加密结果：test.txt → a1b2c3d4e5f6.leo
+# 解密时自动恢复原文件名：a1b2c3d4e5f6.leo → test.txt
+
+# 示例3：自定义配置
+# 如果你想要加密自己的数据目录，但保护系统目录：
+# forbidden_paths = [
+#     "/bin", "/sbin", "/usr/bin", "/usr/sbin",
+#     "/lib", "/lib64", "/usr/lib", "/usr/lib64",
+#     "/boot", "/dev", "/proc", "/sys", "/run",
+#     "/etc", "/root", "/var", "/tmp",
+#     # 不包含 /home，这样你可以加密自己的文件
+# ]
+
+# 示例4：调整文件大小限制
+# max_file_size = 2147483648  # 2GB限制
+# 或设置为0表示无限制（谨慎使用）

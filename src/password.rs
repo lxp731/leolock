@@ -5,7 +5,9 @@ use argon2::{
 };
 use rand::rngs::OsRng;
 use rpassword::read_password;
+use std::fs;
 use std::io::{self, Write};
+use std::path::Path;
 
 /// 密码验证器
 pub struct PasswordManager;
@@ -101,5 +103,43 @@ impl PasswordManager {
         }
 
         Ok(())
+    }
+
+    /// 保存密码哈希到文件
+    pub fn save_password_hash(password_hash: &str, password_file_path: &Path) -> Result<()> {
+        // 确保目录存在
+        if let Some(parent) = password_file_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        
+        // 保存密码哈希
+        fs::write(password_file_path, password_hash)?;
+        Ok(())
+    }
+
+    /// 从文件加载密码哈希
+    pub fn load_password_hash(password_file_path: &Path) -> Result<String> {
+        if !password_file_path.exists() {
+            return Err(BjtError::PasswordError(
+                "密码文件不存在，请先运行 'leolock init'".to_string(),
+            ));
+        }
+        
+        let password_hash = fs::read_to_string(password_file_path)?;
+        Ok(password_hash)
+    }
+
+    /// 验证密码并返回密码哈希
+    pub fn verify_and_get_password_hash(
+        password: &str,
+        password_file_path: &Path,
+    ) -> Result<String> {
+        let stored_hash = Self::load_password_hash(password_file_path)?;
+        
+        if Self::verify_password(password, &stored_hash)? {
+            Ok(stored_hash)
+        } else {
+            Err(BjtError::PasswordError("密码错误".to_string()))
+        }
     }
 }

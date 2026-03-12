@@ -25,6 +25,15 @@ pub struct Config {
     /// 密钥文件位置
     pub key_file_path: String,
     
+    /// 密码文件位置
+    pub password_file_path: String,
+    
+    /// 是否保留原文件名（false=加密文件名，true=保留文件名）
+    pub preserve_original_filename: bool,
+    
+    /// 加密文件格式版本
+    pub file_format_version: u8,
+    
     // === 密码和密钥设置（敏感信息，不保存到文件）===
     
     /// 密码哈希（Argon2id）
@@ -44,6 +53,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             forbidden_paths: vec![
+                // 系统核心目录（绝对不能加密）
                 "/bin".to_string(),
                 "/sbin".to_string(),
                 "/usr/bin".to_string(),
@@ -52,26 +62,27 @@ impl Default for Config {
                 "/lib64".to_string(),
                 "/usr/lib".to_string(),
                 "/usr/lib64".to_string(),
+                
+                // 系统运行时目录
                 "/boot".to_string(),
                 "/dev".to_string(),
                 "/proc".to_string(),
                 "/sys".to_string(),
                 "/run".to_string(),
                 "/etc".to_string(),
-                "/root".to_string(),
-                "/var".to_string(),
-                "/tmp".to_string(),
-                "/usr/local/bin".to_string(),
-                "/usr/local/sbin".to_string(),
-                "/opt".to_string(),
-                "/home".to_string(),
-                "/mnt".to_string(),
-                "/media".to_string(),
+                
+                // 特殊目录
+                "/root".to_string(),     // root用户家目录
+                "/var".to_string(),      // 系统变量文件
+                "/tmp".to_string(),      // 临时文件
             ],
             max_file_size: 10 * 1024 * 1024 * 1024, // 10GB
             show_progress: true,
             default_extension: ".leo".to_string(),
             key_file_path: "~/.config/leolock/keys.toml".to_string(),
+            password_file_path: "~/.config/leolock/password.bin".to_string(),
+            preserve_original_filename: false,  // 默认加密文件名
+            file_format_version: 2,             // 新文件格式版本
             password_hash: None,
             salt: None,
             initialized: false,
@@ -146,6 +157,9 @@ impl Config {
             show_progress: self.show_progress,
             default_extension: self.default_extension.clone(),
             key_file_path: self.key_file_path.clone(),
+            password_file_path: self.password_file_path.clone(),
+            preserve_original_filename: self.preserve_original_filename,
+            file_format_version: self.file_format_version,
         };
         
         let content = toml::to_string_pretty(&safe_config).map_err(|e| {
@@ -180,6 +194,14 @@ impl Config {
     /// 获取密钥文件路径
     pub fn key_file_path(&self) -> Result<PathBuf> {
         let path_str = shellexpand::full(&self.key_file_path).map_err(|e| {
+            BjtError::ConfigError(format!("展开路径失败: {}", e))
+        })?;
+        Ok(PathBuf::from(path_str.to_string()))
+    }
+    
+    /// 获取密码文件路径
+    pub fn password_file_path(&self) -> Result<PathBuf> {
+        let path_str = shellexpand::full(&self.password_file_path).map_err(|e| {
             BjtError::ConfigError(format!("展开路径失败: {}", e))
         })?;
         Ok(PathBuf::from(path_str.to_string()))
@@ -227,4 +249,7 @@ struct SafeConfig {
     pub show_progress: bool,
     pub default_extension: String,
     pub key_file_path: String,
+    pub password_file_path: String,
+    pub preserve_original_filename: bool,
+    pub file_format_version: u8,
 }

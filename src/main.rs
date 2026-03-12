@@ -199,21 +199,27 @@ fn handle_init() -> Result<()> {
     
     // 创建配置并保存
     let mut config = Config::default();
-    config.password_hash = Some(password_hash);
+    config.password_hash = Some(password_hash.clone());
     config.salt = Some(salt);
     config.initialized = true;
     config.save()?;
+    
+    // 保存密码哈希到文件
+    let password_file_path = config.password_file_path()?;
+    PasswordManager::save_password_hash(&password_hash, &password_file_path)?;
     
     let config_dir = Config::get_default_config_dir()?;
     let config_path = config_dir.join("config.toml");
     
     println!("✅ 已生成配置文件: {}", config_path.display());
+    println!("✅ 已保存密码哈希到: {}", password_file_path.display());
     println!("\n你可以编辑此文件来自定义设置:");
     println!("  - 危险路径列表 (forbidden_paths)");
     println!("  - 最大文件大小 (max_file_size)");
     println!("  - 显示进度 (show_progress)");
     println!("  - 默认扩展名 (default_extension)");
     println!("  - 密钥文件路径 (key_file_path)");
+    println!("  - 是否保留原文件名 (preserve_original_filename)");
 
     // 5. 创建备份文件
     println!("\n💾 创建备份文件...");
@@ -229,7 +235,7 @@ fn handle_init() -> Result<()> {
 }
 
 /// 处理恢复命令
-fn handle_recover(backup_path: &PathBuf) -> Result<()> {
+fn handle_recover(backup_path: &std::path::Path) -> Result<()> {
     println!("🔄 从备份文件恢复密钥...");
     println!("备份文件: {}", backup_path.display());
 
@@ -243,14 +249,10 @@ fn handle_recover(backup_path: &PathBuf) -> Result<()> {
         println!("\n🔐 验证当前操作密码");
         let current_password = PasswordManager::read_password_interactive("请输入当前操作密码")?;
         
-        if let Some(password_hash) = &config.password_hash {
-            if !PasswordManager::verify_password(&current_password, password_hash)? {
-                return Err(BjtError::PasswordError("当前操作密码错误".to_string()));
-            }
-            println!("✅ 当前操作密码验证通过");
-        } else {
-            return Err(BjtError::ConfigError("配置文件中缺少密码哈希".to_string()));
-        }
+        // 验证密码（从密码文件）
+        let password_file_path = config.password_file_path()?;
+        PasswordManager::verify_and_get_password_hash(&current_password, &password_file_path)?;
+        println!("✅ 当前操作密码验证通过");
     }
 
     // 2. 询问备份密码（可能是初始密码或旧密码）
@@ -292,19 +294,17 @@ fn handle_password_update() -> Result<()> {
     // 交互式修改密码
     let (old_password, new_password) = PasswordManager::change_password_interactive()?;
 
-    // 验证旧密码
-    if let Some(password_hash) = &config.password_hash {
-        if !PasswordManager::verify_password(&old_password, password_hash)? {
-            return Err(BjtError::PasswordError("旧密码错误".to_string()));
-        }
-    } else {
-        return Err(BjtError::ConfigError("配置文件中缺少密码哈希".to_string()));
-    }
+    // 验证旧密码（从密码文件）
+    let password_file_path = config.password_file_path()?;
+    PasswordManager::verify_and_get_password_hash(&old_password, &password_file_path)?;
 
     // 更新密码哈希
-    config.password_hash = Some(PasswordManager::hash_password(&new_password)?);
+    let new_password_hash = PasswordManager::hash_password(&new_password)?;
+    PasswordManager::save_password_hash(&new_password_hash, &password_file_path)?;
+    
+    // 更新配置中的密码哈希（内存中）
+    config.password_hash = Some(new_password_hash);
     config.salt = Some(Utils::generate_salt()?);
-    config.save()?;
 
     println!("\n✅ 密码修改成功！");
     
@@ -335,14 +335,9 @@ fn handle_key_update() -> Result<()> {
         println!("请输入密码以加密备份文件：");
         let password = PasswordManager::read_password_interactive("密码")?;
         
-        // 验证密码
-        if let Some(password_hash) = &config.password_hash {
-            if !PasswordManager::verify_password(&password, password_hash)? {
-                return Err(BjtError::PasswordError("密码错误".to_string()));
-            }
-        } else {
-            return Err(BjtError::ConfigError("配置文件中缺少密码哈希".to_string()));
-        }
+        // 验证密码（从密码文件）
+        let password_file_path = config.password_file_path()?;
+        PasswordManager::verify_and_get_password_hash(&password, &password_file_path)?;
         
         // 创建备份
         let backup_path = KeyManager::create_backup(&new_key, &password)?;
@@ -361,7 +356,7 @@ fn handle_key_update() -> Result<()> {
 }
 
 /// 处理加密命令
-fn handle_encrypt(path: &PathBuf, keep_original: bool) -> Result<()> {
+fn handle_encrypt(path: &std::path::Path, keep_original: bool) -> Result<()> {
     // 检查是否已初始化
     let config = Config::load()?;
     if !config.is_initialized() {
@@ -374,14 +369,9 @@ fn handle_encrypt(path: &PathBuf, keep_original: bool) -> Result<()> {
     println!("🔐 加密操作需要验证密码");
     let password = PasswordManager::read_password_interactive("请输入密码")?;
 
-    // 验证密码
-    if let Some(password_hash) = &config.password_hash {
-        if !PasswordManager::verify_password(&password, password_hash)? {
-            return Err(BjtError::PasswordError("密码错误".to_string()));
-        }
-    } else {
-        return Err(BjtError::ConfigError("配置文件中缺少密码哈希".to_string()));
-    }
+    // 验证密码（从密码文件）
+    let password_file_path = config.password_file_path()?;
+    PasswordManager::verify_and_get_password_hash(&password, &password_file_path)?;
 
     // 加载密钥
     let key = KeyManager::load_key()?;
@@ -393,7 +383,7 @@ fn handle_encrypt(path: &PathBuf, keep_original: bool) -> Result<()> {
 }
 
 /// 处理解密命令
-fn handle_decrypt(path: &PathBuf, keep_original: bool) -> Result<()> {
+fn handle_decrypt(path: &std::path::Path, keep_original: bool) -> Result<()> {
     // 检查是否已初始化
     let config = Config::load()?;
     if !config.is_initialized() {
@@ -406,14 +396,9 @@ fn handle_decrypt(path: &PathBuf, keep_original: bool) -> Result<()> {
     println!("🔐 解密操作需要验证密码");
     let password = PasswordManager::read_password_interactive("请输入密码")?;
 
-    // 验证密码
-    if let Some(password_hash) = &config.password_hash {
-        if !PasswordManager::verify_password(&password, password_hash)? {
-            return Err(BjtError::PasswordError("密码错误".to_string()));
-        }
-    } else {
-        return Err(BjtError::ConfigError("配置文件中缺少密码哈希".to_string()));
-    }
+    // 验证密码（从密码文件）
+    let password_file_path = config.password_file_path()?;
+    PasswordManager::verify_and_get_password_hash(&password, &password_file_path)?;
 
     // 加载密钥
     let key = KeyManager::load_key()?;
@@ -464,8 +449,6 @@ fn handle_config_show() -> Result<()> {
 }
 
 /// 生成默认配置文件
-
-
 /// 验证配置文件
 fn handle_config_validate() -> Result<()> {
     println!("验证配置文件...");

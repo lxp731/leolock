@@ -42,7 +42,7 @@ impl FileOps {
         for entry in WalkDir::new(dir_path)
             .follow_links(false) // 不跟随符号链接
             .into_iter()
-            .filter_entry(|e| Self::filter_entry(e))
+            .filter_entry(Self::filter_entry)
         {
             match entry {
                 Ok(entry) => {
@@ -110,7 +110,7 @@ impl FileOps {
         for entry in WalkDir::new(dir_path)
             .follow_links(false)
             .into_iter()
-            .filter_entry(|e| Self::filter_entry(e))
+            .filter_entry(Self::filter_entry)
         {
             match entry {
                 Ok(entry) => {
@@ -192,9 +192,11 @@ impl FileOps {
 
         // 处理普通文件
         if encrypt {
-            CryptoManager::encrypt_file(path, key, keep_original)
+            CryptoManager::encrypt_file(path, key, keep_original)?;
+            Ok(())
         } else {
-            CryptoManager::decrypt_file(path, key, keep_original)
+            CryptoManager::decrypt_file(path, key, keep_original)?;
+            Ok(())
         }
     }
 
