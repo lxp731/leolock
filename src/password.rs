@@ -14,6 +14,7 @@ pub struct PasswordManager;
 
 impl PasswordManager {
     /// 哈希密码（使用Argon2id）
+    #[allow(dead_code)]
     pub fn hash_password(password: &str) -> Result<String> {
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
@@ -125,6 +126,7 @@ impl PasswordManager {
     }
 
     /// 保存密码哈希到文件
+    #[allow(dead_code)]
     pub fn save_password_hash(password_hash: &str, password_file_path: &Path) -> Result<()> {
         // 确保目录存在
         if let Some(parent) = password_file_path.parent() {

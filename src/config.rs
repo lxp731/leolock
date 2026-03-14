@@ -26,27 +26,18 @@ pub struct Config {
     /// 密钥文件位置
     pub key_file_path: String,
     
-    /// 密码文件位置
-    pub password_file_path: String,
-    
     /// 是否保留原文件名（false=加密文件名，true=保留文件名）
     pub preserve_original_filename: bool,
     
     /// 加密文件格式版本
     pub file_format_version: u8,
     
-    // === 密码和密钥设置（敏感信息，不保存到文件）===
+    // === 密码和密钥设置 ===
     
-    /// 密码哈希（Argon2id）
-    #[serde(skip)]
-    pub password_hash: Option<String>,
-    
-    /// 盐值（base64编码）
-    #[serde(skip)]
+    /// 盐值（base64编码，用于从密码派生密钥）
     pub salt: Option<String>,
     
     /// 是否已初始化
-    #[serde(skip)]
     pub initialized: bool,
 }
 
@@ -81,10 +72,8 @@ impl Default for Config {
             show_progress: true,
             default_extension: ".leo".to_string(),
             key_file_path: "~/.config/leolock/keys.toml".to_string(),
-            password_file_path: "~/.config/leolock/password.bin".to_string(),
             preserve_original_filename: false,  // 默认加密文件名
             file_format_version: 2,             // 新文件格式版本
-            password_hash: None,
             salt: None,
             initialized: false,
         }
@@ -151,16 +140,17 @@ impl Config {
         
         let config_path = config_dir.join("config.toml");
         
-        // 创建只包含非敏感设置的配置
+        // 创建配置
         let safe_config = SafeConfig {
             forbidden_paths: self.forbidden_paths.clone(),
             max_file_size: self.max_file_size,
             show_progress: self.show_progress,
             default_extension: self.default_extension.clone(),
             key_file_path: self.key_file_path.clone(),
-            password_file_path: self.password_file_path.clone(),
             preserve_original_filename: self.preserve_original_filename,
             file_format_version: self.file_format_version,
+            salt: self.salt.clone(),
+            initialized: self.initialized,
         };
         
         let content = toml::to_string_pretty(&safe_config).map_err(|e| {
@@ -202,13 +192,6 @@ impl Config {
     
     /// 获取密码文件路径
     #[allow(dead_code)]
-    pub fn password_file_path(&self) -> Result<PathBuf> {
-        let path_str = shellexpand::full(&self.password_file_path).map_err(|e| {
-            BjtError::ConfigError(format!("展开路径失败: {}", e))
-        })?;
-        Ok(PathBuf::from(path_str.to_string()))
-    }
-    
     /// 静态方法：获取默认密钥文件路径
     pub fn default_key_file_path() -> Result<PathBuf> {
         let config = Config::load()?;
@@ -259,7 +242,8 @@ struct SafeConfig {
     pub show_progress: bool,
     pub default_extension: String,
     pub key_file_path: String,
-    pub password_file_path: String,
     pub preserve_original_filename: bool,
     pub file_format_version: u8,
+    pub salt: Option<String>,
+    pub initialized: bool,
 }

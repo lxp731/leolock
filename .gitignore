@@ -1,5 +1,12 @@
-/target
-*.tar.gz
-src/leolock*/
-*.pkg.tar.zst
-pkg/
+# 备份文件
+*.backup
+*.old
+*.full.*
+
+# 编译输出
+target/
+Cargo.lock
+
+# 临时文件
+*.leo
+

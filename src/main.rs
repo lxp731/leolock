@@ -13,6 +13,7 @@ use crate::keymgmt::KeyManager;
 use crate::password::PasswordManager;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
+use base64::Engine;
 
 use std::path::{Path, PathBuf};
 
@@ -79,29 +80,13 @@ enum Commands {
         /// 要列出的路径（文件或目录）
         path: PathBuf,
 
-        /// 显示详细信息
-        #[arg(short, long)]
-        verbose: bool,
-
-        /// 显示原文件名（即使已加密）
+        /// 显示原文件名（需要密码验证）
         #[arg(long)]
         show_original: bool,
-        
-        /// 仅显示可解密的文件
-        #[arg(long)]
-        decryptable: bool,
         
         /// 按文件大小排序 (asc=升序, desc=降序)
         #[arg(long, value_enum)]
         sort_by_size: Option<SortOrder>,
-        
-        /// 递归深度限制（0表示无限制）
-        #[arg(long, default_value = "0")]
-        depth: usize,
-        
-        /// 输出格式
-        #[arg(long, value_enum, default_value = "table")]
-        output: OutputFormat,
     },
     
     /// 生成shell补全脚本
@@ -131,14 +116,10 @@ fn main() -> Result<()> {
         },
         Some(Commands::List { 
             path, 
-            verbose, 
             show_original, 
-            decryptable,
             sort_by_size,
-            depth,
-            output 
         }) => {
-            Ok(handle_list(&path, verbose, show_original, decryptable, sort_by_size, depth, output)?)
+            Ok(handle_list(&path, show_original, sort_by_size)?)
         },
         Some(Commands::Completions { shell, output_dir }) => {
             handle_completions(shell, &output_dir)
@@ -157,7 +138,7 @@ fn handle_init() -> Result<()> {
     println!();
     
     // 检查是否已初始化
-    let config = Config::load().unwrap_or_default();
+    let mut config = Config::load().unwrap_or_default();
     if config.is_initialized() {
         println!("⚠️  工具已经初始化过");
         return Ok(());
@@ -174,8 +155,8 @@ fn handle_init() -> Result<()> {
     
     // 读取并验证密码
     let password = loop {
-        let password = PasswordManager::read_password_interactive("请输入密码（至少8位，包含数字和字母）:")?;
-        let confirm = PasswordManager::read_password_interactive("请确认密码:")?;
+        let password = PasswordManager::read_password_interactive("请输入密码（至少8位，包含数字和字母）")?;
+        let confirm = PasswordManager::read_password_interactive("请确认密码")?;
         
         if password != confirm {
             println!("❌ 两次输入的密码不一致，请重新输入");
@@ -194,22 +175,37 @@ fn handle_init() -> Result<()> {
     println!();
     println!("🔑 生成加密密钥...");
     
-    // 生成并保存密钥
-    let key = KeyManager::generate_and_save_key()?;
-    println!("✅ 密钥文件已保存: \"{}\"", config.key_file_path().unwrap_or_default().display());
+    // 生成随机盐值
+    use getrandom::getrandom;
+    let mut salt = [0u8; 16];
+    getrandom(&mut salt).map_err(|e| BjtError::CryptoError(format!("生成盐值失败: {}", e)))?;
+    let salt_base64 = base64::engine::general_purpose::STANDARD.encode(salt);
     
-    // 保存密码哈希
-    let password_hash = PasswordManager::hash_password(&password)?;
-    PasswordManager::save_password_hash(&password_hash, &config.password_file_path()?)?;
-    println!("✅ 密码哈希已保存");
+    // 使用密码派生主密钥
+    let key = crate::crypto::CryptoManager::derive_key_from_password(&password, &salt)?;
+    
+    // 保存密钥和盐值
+    KeyManager::save_key(&key)?;
+    println!("✅ 主密钥已保存");
+    
+    // 保存盐值到配置
+    config.salt = Some(salt_base64);
+    config.initialized = true;
     
     println!();
     println!("📁 创建配置文件...");
     
-    // 创建默认配置
-    let config = Config::default();
+    // 保存配置（包含盐值和初始化状态）
     config.save()?;
-    println!("✅ 已生成配置文件: {}", Config::config_file_path().unwrap_or_default().display());
+    let config_path = Config::config_file_path().unwrap_or_default();
+    println!("✅ 已生成配置文件: {}", config_path.display());
+    
+    // 设置配置文件权限（仅所有者可读写）
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(&config_path)?.permissions();
+    perms.set_mode(0o600); // rw-------
+    std::fs::set_permissions(&config_path, perms)?;
+    println!("🔒 已设置配置文件权限: 600（仅所有者可读写）");
     
     println!();
     println!("你可以编辑此文件来自定义设置:");
@@ -224,7 +220,6 @@ fn handle_init() -> Result<()> {
     
     // 创建备份文件
     let backup_path = KeyManager::create_backup(&key, &password)?;
-    println!("✅ 备份文件已创建: {}", backup_path.display());
     
     // 显示备份警告
     KeyManager::show_backup_warning(&backup_path);
@@ -237,22 +232,54 @@ fn handle_init() -> Result<()> {
 }
 
 /// 验证密码并获取密钥
-fn verify_password_and_get_key() -> Result<[u8; 32]> {
+fn get_key_from_password() -> Result<[u8; 32]> {
     // 读取密码
-    let password = PasswordManager::read_password_interactive("请输入密码:")?;
+    let password = PasswordManager::read_password_interactive("请输入密码")?;
     
-    // 加载密码哈希
+    // 加载配置和盐值
     let config = Config::load().unwrap_or_default();
-    let password_file_path = config.password_file_path()?;
-    let password_hash = PasswordManager::load_password_hash(&password_file_path)?;
     
-    // 验证密码
-    if !PasswordManager::verify_password(&password, &password_hash)? {
-        return Err(BjtError::PasswordError("密码验证失败".to_string()));
+    // 检查是否已初始化
+    if !config.initialized {
+        return Err(BjtError::PasswordError("工具未初始化，请先运行 'leolock init'".to_string()));
     }
     
-    // 加载密钥
-    KeyManager::load_key()
+    // 检查配置文件安全性
+    check_config_security()?;
+    
+    // 获取盐值
+    let salt_base64 = config.salt.ok_or_else(|| {
+        BjtError::PasswordError("配置中缺少盐值，请重新初始化".to_string())
+    })?;
+    
+    let salt = base64::engine::general_purpose::STANDARD.decode(salt_base64).map_err(|e| {
+        BjtError::PasswordError(format!("解码盐值失败: {}", e))
+    })?;
+    
+    // 使用密码派生密钥
+    crate::crypto::CryptoManager::derive_key_from_password(&password, &salt)
+}
+
+/// 检查配置文件安全性
+fn check_config_security() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    
+    if let Ok(config_path) = Config::config_file_path() {
+        if config_path.exists() {
+            let metadata = std::fs::metadata(&config_path)?;
+            let permissions = metadata.permissions();
+            let mode = permissions.mode();
+            
+            // 检查是否其他用户可读 (---rwxrwx)
+            if mode & 0o077 != 0 {
+                println!("⚠️  警告: 配置文件权限过于宽松 ({:o})", mode & 0o777);
+                println!("   建议运行: chmod 600 {}", config_path.display());
+                println!("   或重新初始化: leolock init");
+            }
+        }
+    }
+    
+    Ok(())
 }
 
 /// 处理加密命令
@@ -269,8 +296,8 @@ fn handle_encrypt(path: &std::path::Path, keep_original: bool) -> Result<()> {
     // 加载配置
     let _config = Config::load().unwrap_or_default();
     
-    // 验证密码并获取密钥
-    let key = verify_password_and_get_key()?;
+    // 从密码获取密钥
+    let key = get_key_from_password()?;
     
     // 执行加密
     FileOps::encrypt_path(path, &key, keep_original)?;
@@ -293,8 +320,8 @@ fn handle_decrypt(path: &std::path::Path, keep_encrypted: bool) -> Result<()> {
     // 加载配置
     let _config = Config::load().unwrap_or_default();
     
-    // 验证密码并获取密钥
-    let key = verify_password_and_get_key()?;
+    // 从密码获取密钥
+    let key = get_key_from_password()?;
     
     // 执行解密
     FileOps::decrypt_path(path, &key, keep_encrypted)?;
@@ -377,36 +404,42 @@ struct FileInfo {
 }
 
 /// 处理文件列表命令
-/// 处理文件列表命令
 fn handle_list(
     path: &std::path::Path, 
-    _verbose: bool, 
     show_original: bool,
-    _decryptable: bool,
-    _sort_by_size: Option<SortOrder>,
-    _depth: usize,
-    _output: OutputFormat,
+    sort_by_size: Option<SortOrder>,
 ) -> Result<()> {
-    // 简化实现：暂时忽略新参数，调用基本list功能
     println!("📁 扫描目录: {}", path.display());
     println!("{}", "=".repeat(60));
     
-    // 加载配置
-    let _config = Config::load().unwrap_or_default();
-    
-    // 尝试加载密钥
-    let key_result = KeyManager::load_key();
-    let key = key_result.ok();
+    // 如果要求显示原文件名，需要密码验证
+    let key = if show_original {
+        println!("🔐 显示原文件名需要密码验证");
+        match get_key_from_password() {
+            Ok(key) => {
+                println!("✅ 密码验证成功");
+                Some(key)
+            }
+            Err(e) => {
+                return Err(BjtError::PasswordError(format!("密码验证失败: {}", e)));
+            }
+        }
+    } else {
+        // 不显示原文件名时，尝试从密钥文件加载（向后兼容）
+        KeyManager::load_key().ok()
+    };
     
     use walkdir::WalkDir;
     
+    let mut file_infos = Vec::new();
     let mut total_files = 0;
     let mut encrypted_files = 0;
     
+    // 收集所有加密文件信息
     for entry in WalkDir::new(path)
         .follow_links(false)
+        .max_depth(1)  // 只扫描当前目录
         .into_iter()
-        .filter_entry(|e| FileOps::filter_entry(e))
     {
         match entry {
             Ok(entry) => {
@@ -432,42 +465,7 @@ fn handle_list(
                 // 获取文件信息
                 match crate::crypto::CryptoManager::get_file_info(file_path, key.as_ref()) {
                     Ok(file_info) => {
-                        let path_str = file_info.path.display();
-                        let version_str = format!("v{}", file_info.version);
-                        
-                        // 基本信息
-                        let mut info_line = format!("📄 {} [{}]", path_str, version_str);
-                        
-                        // 添加文件大小
-                        let size_str = if file_info.encrypted_size == 0 {
-                            "空文件".to_string()
-                        } else if file_info.encrypted_size < 1024 {
-                            format!("{} B", file_info.encrypted_size)
-                        } else if file_info.encrypted_size < 1024 * 1024 {
-                            format!("{:.1} KB", file_info.encrypted_size as f64 / 1024.0)
-                        } else if file_info.encrypted_size < 1024 * 1024 * 1024 {
-                            format!("{:.1} MB", file_info.encrypted_size as f64 / (1024.0 * 1024.0))
-                        } else {
-                            format!("{:.1} GB", file_info.encrypted_size as f64 / (1024.0 * 1024.0 * 1024.0))
-                        };
-                        info_line.push_str(&format!(" ({})", size_str));
-                        
-                        // 添加解密状态
-                        let decrypt_status = if file_info.decryptable {
-                            "🔓"
-                        } else {
-                            "🔒"
-                        };
-                        info_line.push_str(&format!(" {}", decrypt_status));
-                        
-                        println!("{}", info_line);
-                        
-                        // 显示原文件名
-                        if show_original {
-                            if let Some(original_name) = &file_info.original_filename {
-                                println!("  原文件名: {}", original_name);
-                            }
-                        }
+                        file_infos.push(file_info);
                     }
                     Err(e) => {
                         println!("❌ 无法读取文件信息 {}: {}", file_path.display(), e);
@@ -476,6 +474,60 @@ fn handle_list(
             }
             Err(e) => {
                 println!("⚠️  无法访问条目: {}", e);
+            }
+        }
+    }
+    
+    // 按文件大小排序
+    if let Some(order) = sort_by_size {
+        match order {
+            SortOrder::Asc => {
+                file_infos.sort_by(|a, b| a.encrypted_size.cmp(&b.encrypted_size));
+                println!("📊 按文件大小升序排列");
+            }
+            SortOrder::Desc => {
+                file_infos.sort_by(|a, b| b.encrypted_size.cmp(&a.encrypted_size));
+                println!("📊 按文件大小降序排列");
+            }
+        }
+    }
+    
+    // 显示文件信息
+    for file_info in &file_infos {
+        let path_str = file_info.path.display();
+        let version_str = format!("v{}", file_info.version);
+        
+        // 基本信息
+        let mut info_line = format!("📄 {} [{}]", path_str, version_str);
+        
+        // 添加文件大小
+        let size_str = if file_info.encrypted_size == 0 {
+            "空文件".to_string()
+        } else if file_info.encrypted_size < 1024 {
+            format!("{} B", file_info.encrypted_size)
+        } else if file_info.encrypted_size < 1024 * 1024 {
+            format!("{:.1} KB", file_info.encrypted_size as f64 / 1024.0)
+        } else if file_info.encrypted_size < 1024 * 1024 * 1024 {
+            format!("{:.1} MB", file_info.encrypted_size as f64 / (1024.0 * 1024.0))
+        } else {
+            format!("{:.1} GB", file_info.encrypted_size as f64 / (1024.0 * 1024.0 * 1024.0))
+        };
+        info_line.push_str(&format!(" ({})", size_str));
+        
+        // 添加解密状态
+        let decrypt_status = if file_info.decryptable {
+            "🔓"
+        } else {
+            "🔒"
+        };
+        info_line.push_str(&format!(" {}", decrypt_status));
+        
+        println!("{}", info_line);
+        
+        // 显示原文件名（如果要求且可解密）
+        if show_original {
+            if let Some(original_name) = &file_info.original_filename {
+                println!("  原文件名: {}", original_name);
             }
         }
     }

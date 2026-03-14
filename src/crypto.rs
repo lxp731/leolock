@@ -89,6 +89,7 @@ pub struct CryptoManager;
 
 impl CryptoManager {
     /// 生成随机AES-256密钥
+    #[allow(dead_code)]
     pub fn generate_key() -> Result<[u8; KEY_SIZE]> {
         let mut key = [0u8; KEY_SIZE];
         getrandom(&mut key).map_err(|e| {

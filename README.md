@@ -1,52 +1,3 @@
-
-<!-- @import "[TOC]" {cmd="toc" depthFrom=1 depthTo=6 orderedList=false} -->
-
-<!-- code_chunk_output -->
-
-- [LeoLock 🔒](#leolock-)
-  - [✨ 特性](#-特性)
-  - [📦 安装](#-安装)
-    - [Debian/Ubuntu/RHEL/Fedora](#debianubunturhelfedora)
-    - [AUR](#aur)
-    - [从源码编译](#从源码编译)
-    - [生成 Tab 补全](#生成-tab-补全)
-  - [🚀 快速开始](#-快速开始)
-    - [1. 初始化工具](#1-初始化工具)
-    - [2. 加密文件](#2-加密文件)
-    - [3. 解密文件](#3-解密文件)
-  - [📖 完整命令参考](#-完整命令参考)
-    - [初始化与恢复](#初始化与恢复)
-    - [密码管理](#密码管理)
-    - [密钥管理](#密钥管理)
-    - [配置管理](#配置管理)
-    - [加密解密](#加密解密)
-    - [Shell 补全](#shell-补全)
-    - [帮助系统](#帮助系统)
-  - [🔐 安全特性](#-安全特性)
-    - [密码学算法](#密码学算法)
-    - [安全限制](#安全限制)
-    - [文件处理](#文件处理)
-    - [配置管理](#配置管理-1)
-      - [默认配置](#默认配置)
-      - [配置特性](#配置特性)
-  - [⚠️ 重要警告](#️-重要警告)
-    - [1. 备份责任](#1-备份责任)
-    - [2. 密钥更新风险](#2-密钥更新风险)
-    - [3. 密码安全](#3-密码安全)
-    - [4. 初始化要求](#4-初始化要求)
-  - [📁 文件结构](#-文件结构)
-    - [用户文件](#用户文件)
-    - [配置文件示例](#配置文件示例)
-    - [项目结构](#项目结构)
-  - [📄 许可证](#-许可证)
-  - [🤝 贡献](#-贡献)
-  - [📞 支持](#-支持)
-  - [📝 版本历史](#-版本历史)
-
-<!-- /code_chunk_output -->
-
-
-
 # LeoLock 🔒
 
 一个安全的文件加密解密命令行工具，使用 AES-256-GCM 加密算法和 Argon2id 密码哈希。
@@ -60,297 +11,147 @@
 - **智能错误处理**: 单个文件失败不影响其他文件
 - **安全删除**: 默认删除源文件，可选保留
 - **备份恢复**: 初始化时自动创建加密备份
-- **Tab 补全**: 支持 Bash、Zsh、Fish
-- **统一配置**: 危险路径、文件大小等安全设置可配置
-- **环境变量覆盖**: 运行时可通过环境变量覆盖配置
-- **16个危险路径** - 保护系统关键目录（精简版）
-- **10GB文件大小限制** - 防止意外加密大文件
-- **可配置性** - 所有安全设置都可自定义
-- **版本自动同步** - 只需修改 `Cargo.toml`，`main.rs` 自动读取
-- **文件名加密** - 可选加密文件名增强隐私保护
-- **文件格式版本控制** - 支持新旧格式文件兼容
-
-## 📦 安装
-
-### Debian/Ubuntu/RHEL/Fedora
-
-```bash
-# 在仓库下载 .deb 包或者 .rpm 包
-```
-
-### AUR
-
-```bash
-yay -S leolock
-```
-
-### 从源码编译
-
-```bash
-# 克隆项目
-git clone https://github.com/lxp731/leolock.git
-cd leolock
-
-# 编译发布版本
-cargo build --release
-
-# 安装到系统（可选）
-sudo cp target/release/leolock /usr/local/bin/
-```
-
-### 生成 Tab 补全
-
-```bash
-# Bash
-leolock complete bash > /usr/share/bash-completion/completions/leolock
-
-# Zsh
-leolock complete zsh > /usr/share/zsh/site-functions/_leolock
-
-# Fish
-leolock complete fish > /usr/share/fish/vendor_completions.d/leolock.fish
-
-# 使用 AUR 默认会安装了补全脚本
-# Bash
-/usr/share/bash-completion/completions/leolock
-
-# Zsh
-/usr/share/zsh/site-functions/_leolock
-
-# Fish
-/usr/share/fish/vendor_completions.d/leolock.fish
-```
+- **Tab 补全**: 支持 Bash、Zsh、Fish、PowerShell、Elvish
+- **文件列表功能**: 查看加密文件信息，支持排序和原文件名显示
+- **运行时安全检查**: 自动检测配置文件权限问题
+- **简化密码管理**: 无需单独的密码哈希文件，密码直接派生密钥
 
 ## 🚀 快速开始
 
-### 1. 初始化工具
+### 1. 安装
 
+**从源码编译（推荐）:**
+```bash
+git clone https://github.com/lxp731/leolock.git
+cd leolock
+cargo build --release
+sudo cp target/release/leolock /usr/local/bin/
+```
+
+**或使用包管理器:** 详见 [docs/INSTALLATION.md](docs/INSTALLATION.md)
+
+### 2. 初始化
 ```bash
 leolock init
 ```
+设置密码，生成配置和密钥。
 
-初始化过程会：
-- 创建配置目录 `~/.config/leolock/`
-- 生成 AES-256 密钥文件
-- 设置初始密码
-- 创建默认配置文件（包含23个危险路径）
-- **自动创建加密备份文件**（请妥善保管！）
-
-### 2. 加密文件
-
+### 3. 加密文件
 ```bash
-# 加密单个文件（交互式输入密码）
 leolock encrypt secret.txt
-# 输出: secret.txt -> secret.txt.leo
-
-# 加密文件夹（递归处理所有文件）
-leolock encrypt documents/
-
-# 加密并保留源文件
-leolock encrypt important.txt --keep-original
 ```
+输入密码，文件被加密为 `secret.txt.leo`。
 
-### 3. 解密文件
-
+### 4. 解密文件
 ```bash
-# 解密单个文件
 leolock decrypt secret.txt.leo
-# 输出: secret.txt.leo -> secret.txt
+```
+输入密码，恢复原文件。
 
-# 解密文件夹（自动跳过非加密文件）
-leolock decrypt mixed_folder/
+### 5. 查看文件
+```bash
+# 列出加密文件
+leolock list .
 
-# 解密并保留加密文件
-leolock decrypt encrypted.leo --keep-original
+# 按大小排序
+leolock list . --sort-by-size desc
+
+# 显示原文件名（需要密码）
+leolock list . --show-original
 ```
 
-## 📖 完整命令参考
-
-### 初始化与恢复
+## 📖 基本命令
 
 | 命令 | 说明 |
 |------|------|
-| `leolock init` | 初始化工具（创建配置和密钥） |
-| `leolock recover --backup <文件>` | 从备份文件恢复密钥 |
-
-### 密码管理
-
-| 命令 | 说明 |
-|------|------|
-| `leolock password update` | 修改操作密码 |
-
-### 密钥管理
-
-| 命令 | 说明 |
-|------|------|
-| `leolock key update` | 重新生成密钥（危险操作！） |
-
-### 配置管理
-
-| 命令 | 说明 |
-|------|------|
-| `leolock config show` | 显示当前配置 |
-| `leolock config validate` | 验证配置文件 |
-
-### 加密解密
-
-| 命令 | 说明 |
-|------|------|
+| `leolock init` | 初始化工具 |
 | `leolock encrypt <路径>` | 加密文件或文件夹 |
 | `leolock decrypt <路径>` | 解密文件或文件夹 |
-| `--keep-original` | 保留源文件（不删除） |
+| `leolock list <路径>` | 列出加密文件信息 |
+| `leolock completions <shell>` | 生成shell补全脚本 |
 
-### Shell 补全
+**常用选项:**
+- `-k, --keep`: 保留源文件（不删除）
+- `--show-original`: 显示原文件名（需要密码）
+- `--sort-by-size <asc/desc>`: 按文件大小排序
 
-| 命令 | 说明 |
-|------|------|
-| `leolock complete bash` | 生成 Bash 补全脚本 |
-| `leolock complete zsh` | 生成 Zsh 补全脚本 |
-| `leolock complete fish` | 生成 Fish 补全脚本 |
-| `leolock complete powershell` | 生成 PowerShell 补全脚本 |
-| `leolock complete elvish` | 生成 Elvish 补全脚本 |
+**完整命令参考:** 详见 [docs/COMMANDS.md](docs/COMMANDS.md)
 
-### 帮助系统
+## 📦 安装选项
 
-| 命令 | 说明 |
-|------|------|
-| `leolock --help` | 显示帮助信息 |
-| `leolock <命令> --help` | 显示子命令帮助 |
+### 从源码编译（推荐）
+```bash
+cargo build --release
+sudo cp target/release/leolock /usr/local/bin/
+```
+
+### 生成补全脚本
+
+**Bash:**
+```bash
+leolock completions bash -o ~/.bash_completion.d/
+```
+
+**Zsh:**
+```bash
+leolock completions zsh -o ~/.zsh/completions/
+```
+
+**其他shell:** 详见 [docs/INSTALLATION.md](docs/INSTALLATION.md)
+
+**详细安装指南:** 详见 [docs/INSTALLATION.md](docs/INSTALLATION.md)
 
 ## 🔐 安全特性
 
-### 密码学算法
-- **文件加密**: AES-256-GCM（认证加密）
-- **密码存储**: Argon2id（随机盐值，抗 GPU 攻击）
-- **密钥派生**: Argon2id（用于备份文件加密）
+### 核心安全
+- **AES-256-GCM**: 军用级认证加密
+- **Argon2id**: 抗GPU/ASIC攻击的密码哈希
+- **随机盐值**: 每个实例唯一，防止彩虹表攻击
+- **文件权限保护**: 自动设置配置文件权限为 600
 
 ### 安全限制
-- **密码强度**: 至少 8 位，包含数字和字母
-- **尝试限制**: 密码验证最多 3 次
-- **危险路径保护**: 默认包含23个系统目录，禁止加密
-- **最大文件大小**: 默认10GB限制，防止意外加密大文件
-- **初始化要求**: 必须先初始化才能执行加密操作
+- **危险路径保护**: 默认禁止加密16个系统目录
+- **文件大小限制**: 默认10GB，防止意外加密大文件
+- **密码强度**: 至少8位，包含数字和字母
+- **运行时检查**: 自动检测配置文件权限问题
 
-### 文件处理
-- **扩展名保留**: `a.txt` → `a.txt.leo` → `a.txt`
-- **递归处理**: 支持文件夹的递归加密/解密
-- **宽松错误处理**: 单个文件失败不影响其他文件
-- **安全删除**: 默认覆盖数据后删除源文件
-- **符号链接安全**: 加密源文件，检测循环链接
+**详细安全文档:** 详见 [docs/SECURITY.md](docs/SECURITY.md)
 
-### 配置管理
-#### 默认配置
-```toml
-# ~/.config/leolock/config.toml
-# 危险路径列表（禁止处理的系统目录）
-forbidden_paths = [
-    "/bin", "/sbin", "/usr/bin", "/usr/sbin",
-    "/lib", "/lib64", "/usr/lib", "/usr/lib64",
-    "/boot", "/dev", "/proc", "/sys", "/run",
-    "/etc", "/root", "/var", "/tmp",
-]
+## 📁 文档目录
 
-# 最大文件大小（字节），0表示无限制
-max_file_size = 10737418240  # 10GB
+- [docs/INSTALLATION.md](docs/INSTALLATION.md) - 详细安装指南
+- [docs/COMMANDS.md](docs/COMMANDS.md) - 完整命令参考
+- [docs/SECURITY.md](docs/SECURITY.md) - 安全特性文档
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md) - 配置文件说明
+- [docs/WARNINGS.md](docs/WARNINGS.md) - 重要警告
+- [docs/STRUCTURE.md](docs/STRUCTURE.md) - 文件结构说明
 
-# 是否启用进度显示
-show_progress = true
+## ⚠️ 重要提醒
 
-# 默认加密文件后缀
-default_extension = ".leo"
+1. **备份至关重要**: 初始化时自动创建备份，请立即转移到安全位置
+2. **记住密码**: 忘记密码将导致所有加密数据永久丢失
+3. **文件权限**: 配置文件包含敏感信息，保持权限为 600
 
-# 密钥文件位置（支持 ~ 扩展）
-key_file_path = "~/.config/leolock/keys.toml"
+**完整警告列表:** 详见 [docs/WARNINGS.md](docs/WARNINGS.md)
 
-# 密码文件位置
-password_file_path = "~/.config/leolock/password.bin"
+## 📝 版本历史
 
-# 是否保留原文件名（false=加密文件名，true=保留文件名）
-preserve_original_filename = false
+### 版本 1.0.3 (当前)
+- 简化密码管理，移除单独的密码哈希文件
+- 添加文件列表功能，支持排序和原文件名显示
+- 增强配置文件安全性，自动权限设置
+- 完善shell补全支持（5种shell）
 
-# 加密文件格式版本
-file_format_version = 2
-```
+### 版本 1.0.2
+- 文件名加密功能，增强隐私保护
+- 新文件格式版本2，支持文件名元数据存储
+- 向后兼容，支持旧版文件解密
 
-#### 配置特性
-1. **安全优先**: 默认包含所有关键系统目录作为危险路径
-2. **环境变量覆盖**: 
-   - `LEOLOCK_FORBIDDEN_PATHS`: 用逗号分隔的危险路径列表
-   - `LEOLOCK_MAX_FILE_SIZE`: 最大文件大小（字节）
-3. **配置文件搜索路径**（按优先级）:
-   - `.leolock.toml`（当前目录）
-   - `LEOLOCK_CONFIG` 环境变量指定的路径
-   - `~/.config/leolock/config.toml`（XDG配置目录）
-   - `~/.leolock.toml`（用户主目录）
-4. **敏感信息保护**: 密码哈希和盐值不保存到配置文件
-5. **初始化状态**: 配置加载时自动检测是否已初始化
-
-## ⚠️ 重要警告
-
-### 1. 备份责任
-- **初始化时自动创建备份**，请立即将备份文件复制到安全位置
-- 备份文件使用您的密码加密，请牢记密码
-- 如果忘记密码或丢失备份，**所有加密数据将永久丢失**
-
-### 2. 密钥更新风险
-```bash
-leolock key update  # ⚠️ 危险操作！
-```
-重新生成密钥将导致：
-- 旧密钥加密的所有文件**无法解密**
-- 旧的备份文件**失效**
-- 必须立即备份新密钥
-
-### 3. 密码安全
-- 使用强密码（至少 8 位，包含数字和字母）
-- 定期修改密码
-- 不要与他人共享密码
-
-### 4. 初始化要求
-- 必须先运行 `leolock init` 完成初始化
-- 未初始化的工具无法执行加密/解密操作
-- 初始化状态保存在配置中
-
-## 📁 文件结构
-
-### 用户文件
-```
-~/.config/leolock/
-├── config.toml      # 配置文件（危险路径、文件大小等）
-└── keys.toml        # 密钥文件（AES-256 密钥）
-
-~/leolock_key_backup_YYYYMMDD_HHMMSS.enc  # 加密备份文件
-```
-
-### 配置文件示例
-完整配置示例见 `examples/config.toml`。
-
-### 项目结构
-```
-leolock/
-├── Cargo.toml                    # 项目配置
-├── CREATE.md                     # 需求规格文档（已合并）
-├── ROADMAP.md                    # 项目路线图和技术规划
-├── examples/                     # 示例文件
-│   └── config.toml               # 示例配置文件
-├── src/                          # 源代码
-│   ├── main.rs                   # CLI入口和命令解析
-│   ├── config.rs                 # 统一配置管理（危险路径、文件大小等）
-│   ├── crypto.rs                 # AES-256-GCM加密/解密（支持文件名加密）
-│   ├── keymgmt.rs                # 密钥管理（生成、备份、恢复）
-│   ├── fileops.rs                # 文件操作（递归、危险路径检查）
-│   ├── password.rs               # 密码处理（Argon2id、交互式）
-│   ├── errors.rs                 # 错误类型定义
-│   ├── utils.rs                  # 工具函数（确认、盐值生成、安全删除、文件名哈希）
-│   └── lib.rs                    # 库模式接口
-└── README.md                     # 本文档
-```
+**完整版本历史:** 详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
 
 ## 📄 许可证
 
-<a href="https://github.com/lxp731/leolock/blob/main/LICENSE" alt="MIT LICENSE">
-    <p style="color: black">MIT LICENSE</p>
-</a>
+MIT License - 详见 [LICENSE](LICENSE)
 
 ## 🤝 贡献
 
@@ -359,42 +160,13 @@ leolock/
 ## 📞 支持
 
 如有问题，请：
-1. 查看本文档
+1. 查看本文档和 docs/ 目录
 2. 运行 `leolock --help`
-3. 提交 Issue
-
-## 📝 版本历史
-
-### 版本 1.0.2 (当前)
-- **文件名加密功能**: 支持可选加密文件名增强隐私保护
-- **新文件格式版本2**: 支持文件名元数据存储
-- **向后兼容**: 自动检测文件版本，支持旧版文件解密
-- **密码验证修复**: 使用单独的密码文件存储密码哈希
-- **危险路径精简**: 从23个精简到16个核心系统目录
-- **代码质量优化**: 修复所有编译警告，遵循Rust最佳实践
-- **安全删除改进**: 加密和解密都支持安全删除原始文件
-
-### 版本 1.0.1
-- **统一配置系统**: 合并危险路径配置和密码/密钥配置
-- **配置管理命令**: `leolock config show` / `leolock config validate`
-- **初始化流程优化**: `leolock init` 执行完整初始化
-- **补全命令改进**: `leolock complete` 替代 `--completions` 选项
-- **安全设计**: 未初始化不能执行加密操作
-- **代码清理**: 移除所有未使用的函数和导入
-- **默认配置**: 包含23个危险路径，10GB文件大小限制
-- **版本自动同步**: 只需修改 `Cargo.toml`，`main.rs` 自动读取
-
-### 版本 1.0.0 (初始版本)
-- **基础加密功能**: AES-256-GCM 文件加密/解密
-- **密码管理**: Argon2id 密码哈希和验证
-- **递归处理**: 支持文件和文件夹批量操作
-- **安全限制**: 危险路径保护和文件大小限制
-- **备份恢复**: 密钥备份和恢复功能
+3. 提交 [GitHub Issue](https://github.com/lxp731/leolock/issues)
 
 ---
 
-**最后更新**: 2026-03-12  
-**作者**: Burgess Leo  
-**状态**: ✅ 功能完整，代码优化，稳定可用
+**最后更新:** 2026-03-15  
+**项目状态:** ✅ 功能完整，安全优化，稳定可用
 
-**安全提示**: 请定期备份重要数据，加密不是数据丢失的保险措施。
+**安全提示:** 请定期备份重要数据，加密不是数据丢失的保险措施。

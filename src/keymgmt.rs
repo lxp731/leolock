@@ -40,6 +40,7 @@ pub struct KeyManager;
 
 impl KeyManager {
     /// 生成并保存密钥文件
+    #[allow(dead_code)]
     pub fn generate_and_save_key() -> Result<[u8; 32]> {
         let key = CryptoManager::generate_key()?;
         Self::save_key(&key)?;
