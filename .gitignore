@@ -2,6 +2,10 @@
 *.backup
 *.old
 *.full.*
+README.old.md
+README.full.md
+ROADMAP.md.backup
+README.md.backup
 
 # 编译输出
 target/
@@ -9,4 +13,7 @@ Cargo.lock
 
 # 临时文件
 *.leo
+
+# 测试文件
+test_*
 
