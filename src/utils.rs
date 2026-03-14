@@ -11,6 +11,7 @@ pub struct Utils;
 
 impl Utils {
     /// 交互式确认
+    #[allow(dead_code)]
     pub fn confirm(prompt: &str) -> Result<bool> {
         print!("{} [y/N]: ", prompt);
         io::stdout().flush()?;
@@ -22,6 +23,7 @@ impl Utils {
     }
 
     /// 生成随机盐值（base64编码）
+    #[allow(dead_code)]
     pub fn generate_salt() -> Result<String> {
         let mut salt = [0u8; 16];
         getrandom::getrandom(&mut salt).map_err(|e| {

@@ -9,11 +9,14 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+#[allow(dead_code)]
 const BACKUP_PREFIX: &str = "leolock_key_backup";
+#[allow(dead_code)]
 const BACKUP_EXTENSION: &str = "enc";
 
 /// 备份文件元数据（明文部分）
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 struct BackupMetadata {
     version: u8,
     tool_name: String,
@@ -90,6 +93,7 @@ impl KeyManager {
     }
 
     /// 创建加密备份文件（初始化时调用）
+    #[allow(dead_code)]
     pub fn create_backup(key: &[u8; 32], password: &str) -> Result<PathBuf> {
         // 生成备份文件名（时间戳精确到秒）
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
@@ -155,6 +159,7 @@ impl KeyManager {
     }
 
     /// 从备份文件恢复密钥
+    #[allow(dead_code)]
     pub fn recover_from_backup(backup_path: &Path, password: &str) -> Result<[u8; 32]> {
         if !backup_path.exists() {
             return Err(BjtError::BackupError(
@@ -205,6 +210,7 @@ impl KeyManager {
     }
 
     /// 确认危险操作（密钥更新）
+    #[allow(dead_code)]
     pub fn confirm_dangerous_operation() -> Result<()> {
         println!("{}", "=".repeat(60));
         println!("⚠️  警告：重新生成密钥是危险操作！");
@@ -237,6 +243,7 @@ impl KeyManager {
     }
 
     /// 显示备份警告信息
+    #[allow(dead_code)]
     pub fn show_backup_warning(backup_path: &Path) {
         println!("{}", "=".repeat(60));
         println!("⚠️  重要警告：请立即备份密钥文件！");
@@ -260,6 +267,7 @@ impl KeyManager {
 
 /// 备份文件数据结构
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 struct BackupData {
     metadata: BackupMetadata,
     salt: Vec<u8>,

@@ -4,12 +4,14 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Key, Nonce,
 };
+use chrono::{DateTime, Utc};
 use getrandom::getrandom;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{Read, Write, Seek, SeekFrom};
 use std::path::PathBuf;
+use std::time::SystemTime;
 
-const KEY_SIZE: usize = 32; // AES-256密钥大小
+pub const KEY_SIZE: usize = 32; // AES-256密钥大小
 const NONCE_SIZE: usize = 12; // GCM nonce大小
 const MAGIC_BYTES: [u8; 4] = [0x4C, 0x45, 0x4F, 0x32]; // "LEO2"
 const FILE_VERSION: u8 = 2;
@@ -20,6 +22,26 @@ struct FileHeader {
     magic: [u8; 4],
     version: u8,
     filename_metadata_len: u32,
+}
+
+/// 加密文件信息
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct FileInfo {
+    /// 文件路径
+    pub path: PathBuf,
+    /// 文件格式版本
+    pub version: u8,
+    /// 原文件名（如果可解密）
+    pub original_filename: Option<String>,
+    /// 加密文件大小（字节）
+    pub encrypted_size: u64,
+    /// 文件创建时间
+    pub created: Option<DateTime<Utc>>,
+    /// 文件修改时间
+    pub modified: Option<DateTime<Utc>>,
+    /// 是否可解密（有正确的密钥）
+    pub decryptable: bool,
 }
 
 impl FileHeader {
@@ -388,6 +410,7 @@ impl CryptoManager {
     }
 
     /// 使用密码派生密钥（用于备份加密）
+    #[allow(dead_code)]
     pub fn derive_key_from_password(password: &str, salt: &[u8]) -> Result<[u8; KEY_SIZE]> {
         use argon2::{Algorithm, Argon2, Params, Version};
 
@@ -405,5 +428,110 @@ impl CryptoManager {
             .map_err(|e| BjtError::CryptoError(format!("密码派生密钥失败: {}", e)))?;
 
         Ok(key)
+    }
+
+    /// 获取加密文件信息
+    pub fn get_file_info(file_path: &std::path::Path, key: Option<&[u8; KEY_SIZE]>) -> Result<FileInfo> {
+        // 检查文件是否存在
+        if !file_path.exists() {
+            return Err(BjtError::FileError(format!("文件不存在: {}", file_path.display())));
+        }
+
+        // 获取文件元数据
+        let metadata = fs::metadata(file_path)?;
+        let encrypted_size = metadata.len();
+        
+        // 获取文件时间
+        let created = metadata.created()
+            .ok()
+            .and_then(|t| SystemTime::UNIX_EPOCH.checked_add(t.duration_since(SystemTime::UNIX_EPOCH).ok()?))
+            .map(|st| DateTime::<Utc>::from(st));
+            
+        let modified = metadata.modified()
+            .ok()
+            .and_then(|t| SystemTime::UNIX_EPOCH.checked_add(t.duration_since(SystemTime::UNIX_EPOCH).ok()?))
+            .map(|st| DateTime::<Utc>::from(st));
+
+        // 检测文件版本
+        let version = Self::detect_file_version(file_path)?;
+        
+        let mut original_filename = None;
+        let decryptable;
+
+        match version {
+            1 => {
+                // 旧版文件：无法获取原文件名（除非从文件名推断）
+                decryptable = key.is_some(); // 有密钥就可以解密
+                
+                // 尝试从文件名推断原文件名
+                // 只对明显是"原文件名+.leo"格式的文件进行推断
+                let filename = file_path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy();
+                    
+                if filename.ends_with(".leo") {
+                    let stripped = &filename[..filename.len() - 4]; // 移除.leo
+                    // 只有当移除后缀后文件名仍然有效时才显示
+                    if !stripped.is_empty() && stripped != filename {
+                        // 检查是否看起来像原文件名（包含点表示有扩展名，或者不是简单单词）
+                        if stripped.contains('.') || stripped.len() > 8 {
+                            original_filename = Some(stripped.to_string());
+                        } else {
+                            // 简单单词如"small"、"test"等，不显示为原文件名
+                            original_filename = Some("[文件名已加密]".to_string());
+                        }
+                    }
+                }
+            }
+            2 => {
+                // 新版文件：尝试读取并解密文件名
+                let mut file = fs::File::open(file_path)?;
+                
+                // 跳过魔术字节和版本号
+                file.seek(SeekFrom::Start(5))?;
+                
+                // 读取文件名元数据长度
+                let mut len_bytes = [0u8; 4];
+                file.read_exact(&mut len_bytes)?;
+                let metadata_len = u32::from_le_bytes(len_bytes) as usize;
+                
+                if let Some(key) = key {
+                    // 尝试解密文件名
+                    let mut encrypted_filename = vec![0u8; metadata_len];
+                    file.read_exact(&mut encrypted_filename)?;
+                    
+                    match Self::decrypt_filename(&encrypted_filename, key) {
+                        Ok(filename) => {
+                            original_filename = Some(filename);
+                            decryptable = true;
+                        }
+                        Err(_) => {
+                            // 解密失败，可能密钥错误
+                            original_filename = Some("[需要正确密钥]".to_string());
+                            decryptable = false;
+                        }
+                    }
+                } else {
+                    // 没有提供密钥
+                    original_filename = Some("[需要密钥查看]".to_string());
+                    decryptable = false;
+                }
+            }
+            _ => {
+                return Err(BjtError::CryptoError(
+                    format!("不支持的文件版本: {}", version)
+                ));
+            }
+        }
+
+        Ok(FileInfo {
+            path: file_path.to_path_buf(),
+            version,
+            original_filename,
+            encrypted_size,
+            created,
+            modified,
+            decryptable,
+        })
     }
 }

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 /// 统一的应用程序配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct Config {
     // === 安全设置 ===
     
@@ -200,6 +201,7 @@ impl Config {
     }
     
     /// 获取密码文件路径
+    #[allow(dead_code)]
     pub fn password_file_path(&self) -> Result<PathBuf> {
         let path_str = shellexpand::full(&self.password_file_path).map_err(|e| {
             BjtError::ConfigError(format!("展开路径失败: {}", e))
@@ -213,7 +215,14 @@ impl Config {
         config.key_file_path()
     }
     
+    /// 静态方法：获取配置文件路径
+    pub fn config_file_path() -> Result<PathBuf> {
+        let config_dir = Self::get_default_config_dir()?;
+        Ok(config_dir.join("config.toml"))
+    }
+    
     /// 创建配置目录
+    #[allow(dead_code)]
     pub fn create_config_dir() -> Result<()> {
         let config_dir = Self::get_default_config_dir()?;
         fs::create_dir_all(&config_dir)?;
@@ -243,6 +252,7 @@ impl Config {
 
 /// 安全配置（只包含可以保存到文件的非敏感设置）
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 struct SafeConfig {
     pub forbidden_paths: Vec<String>,
     pub max_file_size: u64,

@@ -44,12 +44,30 @@ impl PasswordManager {
             BjtError::PasswordError(format!("刷新输出失败: {}", e))
         })?;
 
-        read_password().map_err(|e| {
-            BjtError::PasswordError(format!("读取密码失败: {}", e))
-        })
+        // 尝试使用rpassword，如果失败则回退到标准输入
+        match read_password() {
+            Ok(password) => Ok(password),
+            Err(_e) => {
+                // rpassword失败，尝试从标准输入读取（有回显，用于非交互式环境）
+                println!("[注意: 使用标准输入读取密码]");
+                let mut password = String::new();
+                io::stdin().read_line(&mut password).map_err(|e| {
+                    BjtError::PasswordError(format!("从标准输入读取密码失败: {}", e))
+                })?;
+                // 移除换行符
+                if password.ends_with('\n') {
+                    password.pop();
+                    if password.ends_with('\r') {
+                        password.pop();
+                    }
+                }
+                Ok(password)
+            }
+        }
     }
 
     /// 交互式修改密码
+    #[allow(dead_code)]
     pub fn change_password_interactive() -> Result<(String, String)> {
         println!("🔄 修改密码");
 
@@ -81,6 +99,7 @@ impl PasswordManager {
 
 
     /// 验证密码强度
+    #[allow(dead_code)]
     pub fn validate_password_strength(password: &str) -> Result<()> {
         if password.len() < 8 {
             return Err(BjtError::ValidationError(
@@ -130,6 +149,7 @@ impl PasswordManager {
     }
 
     /// 验证密码并返回密码哈希
+    #[allow(dead_code)]
     pub fn verify_and_get_password_hash(
         password: &str,
         password_file_path: &Path,
