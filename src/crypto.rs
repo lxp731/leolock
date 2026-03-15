@@ -53,10 +53,23 @@ impl FileHeader {
         }
     }
     
+    /// 获取头部大小（固定9字节）
+    fn size(&self) -> usize {
+        4 + 1 + 4 // magic(4) + version(1) + filename_metadata_len(4)
+    }
+    
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         writer.write_all(&self.magic)?;
         writer.write_all(&[self.version])?;
         writer.write_all(&self.filename_metadata_len.to_le_bytes())?;
+        Ok(())
+    }
+    
+    /// 写入头部到缓冲区
+    fn write_to_buffer(&self, buffer: &mut Vec<u8>) -> Result<()> {
+        buffer.extend_from_slice(&self.magic);
+        buffer.push(self.version);
+        buffer.extend_from_slice(&self.filename_metadata_len.to_le_bytes());
         Ok(())
     }
     
@@ -245,25 +258,33 @@ impl CryptoManager {
             PathBuf::from(&display_filename)
         };
         
-        let mut output_file = fs::File::create(&output_path)?;
-        
         if preserve_filename {
             // 保留文件名：使用旧版格式（向后兼容）
-            output_file.write_all(&encrypted_data)?;
+            // 单次写入：加密数据
+            fs::write(&output_path, &encrypted_data)?;
         } else {
             // 加密文件名：使用新版格式
             // 1. 加密文件名
             let encrypted_filename = Self::encrypt_filename(&original_filename, key)?;
             
-            // 2. 写入文件头部
+            // 2. 创建文件头部
             let header = FileHeader::new(encrypted_filename.len() as u32);
-            header.write(&mut output_file)?;
             
-            // 3. 写入加密的文件名
-            output_file.write_all(&encrypted_filename)?;
+            // 3. 计算总大小并预分配缓冲区
+            let total_size = header.size() + encrypted_filename.len() + encrypted_data.len();
+            let mut buffer = Vec::with_capacity(total_size);
             
-            // 4. 写入文件内容
-            output_file.write_all(&encrypted_data)?;
+            // 4. 写入头部到缓冲区
+            header.write_to_buffer(&mut buffer)?;
+            
+            // 5. 写入加密的文件名到缓冲区
+            buffer.extend_from_slice(&encrypted_filename);
+            
+            // 6. 写入加密内容到缓冲区
+            buffer.extend_from_slice(&encrypted_data);
+            
+            // 7. 单次写入整个缓冲区到文件
+            fs::write(&output_path, &buffer)?;
         }
         
         println!("✅ 加密完成: {} -> {}", 
@@ -446,12 +467,12 @@ impl CryptoManager {
         let created = metadata.created()
             .ok()
             .and_then(|t| SystemTime::UNIX_EPOCH.checked_add(t.duration_since(SystemTime::UNIX_EPOCH).ok()?))
-            .map(|st| DateTime::<Utc>::from(st));
+            .map(DateTime::<Utc>::from);
             
         let modified = metadata.modified()
             .ok()
             .and_then(|t| SystemTime::UNIX_EPOCH.checked_add(t.duration_since(SystemTime::UNIX_EPOCH).ok()?))
-            .map(|st| DateTime::<Utc>::from(st));
+            .map(DateTime::<Utc>::from);
 
         // 检测文件版本
         let version = Self::detect_file_version(file_path)?;
@@ -470,8 +491,7 @@ impl CryptoManager {
                     .unwrap_or_default()
                     .to_string_lossy();
                     
-                if filename.ends_with(".leo") {
-                    let stripped = &filename[..filename.len() - 4]; // 移除.leo
+                if let Some(stripped) = filename.strip_suffix(".leo") {
                     // 只有当移除后缀后文件名仍然有效时才显示
                     if !stripped.is_empty() && stripped != filename {
                         // 检查是否看起来像原文件名（包含点表示有扩展名，或者不是简单单词）

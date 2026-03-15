@@ -63,6 +63,10 @@ enum Commands {
         /// 是否保留原文件（默认删除原文件）
         #[arg(short, long)]
         keep: bool,
+        
+        /// 快速模式：不加密文件名，仅加密文件内容
+        #[arg(short = 'F', long)]
+        fast: bool,
     },
     
     /// 解密文件或目录
@@ -108,8 +112,8 @@ fn main() -> Result<()> {
         Some(Commands::Init) => {
             handle_init()
         },
-        Some(Commands::Encrypt { path, keep }) => {
-            handle_encrypt(&path, keep)
+        Some(Commands::Encrypt { path, keep, fast }) => {
+            handle_encrypt(&path, keep, fast)
         },
         Some(Commands::Decrypt { path, keep }) => {
             handle_decrypt(&path, keep)
@@ -283,8 +287,17 @@ fn check_config_security() -> Result<()> {
 }
 
 /// 处理加密命令
-fn handle_encrypt(path: &std::path::Path, keep_original: bool) -> Result<()> {
-    println!("🔒 开始加密: {}", path.display());
+fn handle_encrypt(path: &std::path::Path, keep_original: bool, fast: bool) -> Result<()> {
+    if fast {
+        println!("🔒 开始加密: {} (快速模式)", path.display());
+        println!("  模式: 仅加密文件内容，不加密文件名");
+        println!("  优势: 速度更快，适合大文件");
+        println!("  注意: 原始文件名将保持可读");
+    } else {
+        println!("🔒 开始加密: {} (完全模式)", path.display());
+        println!("  模式: 加密文件内容和文件名");
+        println!("  优势: 最高安全性，隐藏文件信息");
+    }
     
     // 检查路径是否存在
     if !path.exists() {
@@ -294,13 +307,20 @@ fn handle_encrypt(path: &std::path::Path, keep_original: bool) -> Result<()> {
     }
     
     // 加载配置
-    let _config = Config::load().unwrap_or_default();
+    let mut config = Config::load().unwrap_or_default();
+    
+    // 临时覆盖配置中的 preserve_original_filename 设置
+    let original_preserve_setting = config.preserve_original_filename;
+    config.preserve_original_filename = fast; // fast=true 表示保留文件名
     
     // 从密码获取密钥
     let key = get_key_from_password()?;
     
-    // 执行加密
-    FileOps::encrypt_path(path, &key, keep_original)?;
+    // 执行加密（使用临时配置）
+    FileOps::encrypt_path_with_config(path, &key, keep_original, &config)?;
+    
+    // 恢复原始配置（不保存到文件）
+    config.preserve_original_filename = original_preserve_setting;
     
     println!("✅ 加密完成！");
     Ok(())
