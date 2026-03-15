@@ -369,10 +369,10 @@ impl FileOps {
         path: &Path,
         key: &[u8; 32],
         keep_original: bool,
-        config: &Config,
+        #[allow(unused_variables)] config: &Config,
     ) -> Result<()> {
         if path.is_dir() {
-            Self::decrypt_directory_with_progress(path, key, keep_original, config.show_progress)
+            Self::decrypt_directory_with_progress(path, key, keep_original, false)
         } else {
             Self::process_file(path, key, false, keep_original).map(|_| ())
         }
@@ -465,16 +465,12 @@ impl FileOps {
     /// 加密目录（已弃用，使用 encrypt_directory_with_progress 代替）
     #[allow(dead_code)]
     pub fn encrypt_directory(dir_path: &Path, key: &[u8; 32], keep_original: bool) -> Result<()> {
-        // 从配置文件加载配置
-        let config = Config::load().unwrap_or_default();
-        Self::encrypt_directory_with_progress(dir_path, key, keep_original, config.show_progress)
+        Self::encrypt_directory_with_progress(dir_path, key, keep_original, false)
     }
 
     /// 解密目录（已弃用，使用 decrypt_directory_with_progress 代替）
     #[allow(dead_code)]
     pub fn decrypt_directory(dir_path: &Path, key: &[u8; 32], keep_original: bool) -> Result<()> {
-        // 从配置文件加载配置
-        let config = Config::load().unwrap_or_default();
-        Self::decrypt_directory_with_progress(dir_path, key, keep_original, config.show_progress)
+        Self::decrypt_directory_with_progress(dir_path, key, keep_original, false)
     }
 }

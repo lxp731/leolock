@@ -223,9 +223,8 @@ fn handle_init() -> Result<()> {
     KeyManager::save_key(&key)?;
     println!("✅ 主密钥已保存");
     
-    // 保存盐值到配置
+    // 保存盐值到配置（设置盐值即表示已初始化）
     config.salt = Some(salt_base64);
-    config.initialized = true;
     
     println!();
     println!("📁 创建配置文件...");
@@ -274,8 +273,8 @@ fn get_key_from_password() -> Result<[u8; 32]> {
     // 加载配置和盐值
     let config = Config::load().unwrap_or_default();
     
-    // 检查是否已初始化
-    if !config.initialized {
+    // 检查是否已初始化（通过盐值判断）
+    if !config.is_initialized() {
         return Err(BjtError::PasswordError("工具未初始化，请先运行 'leolock init'".to_string()));
     }
     
@@ -623,10 +622,9 @@ fn handle_config_validate() -> Result<()> {
     
     println!("✅ 配置文件验证通过");
     println!("  配置文件路径: {:?}", Config::config_file_path()?);
-    println!("  初始化状态: {}", config.initialized);
+    println!("  初始化状态: {}", config.is_initialized());
     println!("  盐值配置: {}", config.salt.is_some());
     println!("  文件名加密默认: {}", !config.preserve_original_filename);
-    println!("  进度显示: {}", config.show_progress);
     println!("  最大文件大小: {} bytes", config.max_file_size);
     
     // 检查配置文件权限

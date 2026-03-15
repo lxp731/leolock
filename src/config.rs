@@ -15,9 +15,6 @@ pub struct Config {
     /// 最大文件大小（字节），0表示无限制
     pub max_file_size: u64,
     
-    /// 是否启用进度显示
-    pub show_progress: bool,
-    
     // === 加密设置 ===
     
     /// 默认加密文件后缀
@@ -32,13 +29,11 @@ pub struct Config {
     /// 加密文件格式版本
     pub file_format_version: u8,
     
-    // === 密码和密钥设置 ===
+    // === 核心安全数据 ===
     
     /// 盐值（base64编码，用于从密码派生密钥）
+    /// None = 未初始化，Some = 已初始化
     pub salt: Option<String>,
-    
-    /// 是否已初始化
-    pub initialized: bool,
 }
 
 impl Default for Config {
@@ -69,13 +64,11 @@ impl Default for Config {
                 "/tmp".to_string(),      // 临时文件
             ],
             max_file_size: 10 * 1024 * 1024 * 1024, // 10GB
-            show_progress: true,
             default_extension: ".leo".to_string(),
             key_file_path: "~/.config/leolock/keys.toml".to_string(),
             preserve_original_filename: false,  // 默认加密文件名
             file_format_version: 2,             // 新文件格式版本
             salt: None,
-            initialized: false,
         }
     }
 }
@@ -91,12 +84,10 @@ impl Config {
         for path in config_paths {
             if path.exists() {
                 let content = fs::read_to_string(&path)?;
-                let mut config: Config = toml::from_str(&content).map_err(|e| {
+                let config: Config = toml::from_str(&content).map_err(|e| {
                     BjtError::ConfigError(format!("解析配置文件失败 {}: {}", path.display(), e))
                 })?;
                 
-                // 标记为已加载配置文件
-                config.initialized = true;
                 return Ok(config);
             }
         }
@@ -144,13 +135,11 @@ impl Config {
         let safe_config = SafeConfig {
             forbidden_paths: self.forbidden_paths.clone(),
             max_file_size: self.max_file_size,
-            show_progress: self.show_progress,
             default_extension: self.default_extension.clone(),
             key_file_path: self.key_file_path.clone(),
             preserve_original_filename: self.preserve_original_filename,
             file_format_version: self.file_format_version,
             salt: self.salt.clone(),
-            initialized: self.initialized,
         };
         
         let content = toml::to_string_pretty(&safe_config).map_err(|e| {
@@ -174,7 +163,8 @@ impl Config {
     
     /// 检查工具是否已初始化
     pub fn is_initialized(&self) -> bool {
-        self.initialized
+        // 通过盐值存在性判断是否初始化
+        self.salt.is_some()
     }
     
     /// 获取配置目录路径
@@ -239,11 +229,9 @@ impl Config {
 struct SafeConfig {
     pub forbidden_paths: Vec<String>,
     pub max_file_size: u64,
-    pub show_progress: bool,
     pub default_extension: String,
     pub key_file_path: String,
     pub preserve_original_filename: bool,
     pub file_format_version: u8,
     pub salt: Option<String>,
-    pub initialized: bool,
 }
