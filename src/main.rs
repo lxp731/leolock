@@ -234,13 +234,6 @@ fn handle_init() -> Result<()> {
     let config_path = Config::config_file_path().unwrap_or_default();
     println!("✅ 已生成配置文件: {}", config_path.display());
     
-    // 设置配置文件权限（仅所有者可读写）
-    use std::os::unix::fs::PermissionsExt;
-    let mut perms = std::fs::metadata(&config_path)?.permissions();
-    perms.set_mode(0o600); // rw-------
-    std::fs::set_permissions(&config_path, perms)?;
-    println!("🔒 已设置配置文件权限: 600（仅所有者可读写）");
-    
     println!();
     println!("你可以编辑此文件来自定义设置:");
     println!(" - 危险路径列表 (forbidden_paths)");
@@ -278,9 +271,6 @@ fn get_key_from_password() -> Result<[u8; 32]> {
         return Err(BjtError::PasswordError("工具未初始化，请先运行 'leolock init'".to_string()));
     }
     
-    // 检查配置文件安全性
-    check_config_security()?;
-    
     // 获取盐值
     let salt_base64 = config.salt.ok_or_else(|| {
         BjtError::PasswordError("配置中缺少盐值，请重新初始化".to_string())
@@ -294,27 +284,7 @@ fn get_key_from_password() -> Result<[u8; 32]> {
     crate::crypto::CryptoManager::derive_key_from_password(&password, &salt)
 }
 
-/// 检查配置文件安全性
-fn check_config_security() -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    
-    if let Ok(config_path) = Config::config_file_path() {
-        if config_path.exists() {
-            let metadata = std::fs::metadata(&config_path)?;
-            let permissions = metadata.permissions();
-            let mode = permissions.mode();
-            
-            // 检查是否其他用户可读 (---rwxrwx)
-            if mode & 0o077 != 0 {
-                println!("⚠️  警告: 配置文件权限过于宽松 ({:o})", mode & 0o777);
-                println!("   建议运行: chmod 600 {}", config_path.display());
-                println!("   或重新初始化: leolock init");
-            }
-        }
-    }
-    
-    Ok(())
-}
+
 
 /// 处理加密命令
 fn handle_encrypt(path: &std::path::Path, keep_original: bool, fast: bool) -> Result<()> {
@@ -627,10 +597,7 @@ fn handle_config_validate() -> Result<()> {
     println!("  文件名加密默认: {}", !config.preserve_original_filename);
     println!("  最大文件大小: {} bytes", config.max_file_size);
     
-    // 检查配置文件权限
-    check_config_security()?;
-    
-    println!("✅ 所有安全检查通过");
+    println!("✅ 配置验证完成");
     
     Ok(())
 }
