@@ -79,6 +79,7 @@ leolock list . --show-original
 | `leolock encrypt <path>` | Encrypt file or folder |
 | `leolock decrypt <path>` | Decrypt file or folder |
 | `leolock list <path>` | List encrypted file information |
+| `leolock recover --backup <file>` | Restore key from backup file |
 | `leolock completions <shell>` | Generate shell completion scripts |
 
 **Common options:**

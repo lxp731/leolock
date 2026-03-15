@@ -103,6 +103,13 @@ enum Commands {
         #[arg(short, long, default_value = ".")]
         output_dir: PathBuf,
     },
+    
+    /// 从备份文件恢复密钥
+    Recover {
+        /// 备份文件路径
+        #[arg(long)]
+        backup: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -127,6 +134,9 @@ fn main() -> Result<()> {
         },
         Some(Commands::Completions { shell, output_dir }) => {
             handle_completions(shell, &output_dir)
+        },
+        Some(Commands::Recover { backup }) => {
+            handle_recover(&backup)
         },
         None => {
             let mut cmd = Cli::command();
@@ -557,6 +567,34 @@ fn handle_list(
     println!("  总文件数: {}", total_files);
     println!("  加密文件数: {}", encrypted_files);
     println!("  普通文件数: {}", total_files - encrypted_files);
+    
+    Ok(())
+}
+
+/// 处理恢复命令
+fn handle_recover(backup_path: &Path) -> Result<()> {
+    println!("🔄 从备份文件恢复密钥");
+    println!("备份文件: {}", backup_path.display());
+    
+    // 检查备份文件是否存在
+    if !backup_path.exists() {
+        return Err(crate::errors::BjtError::BackupError(
+            format!("备份文件不存在: {}", backup_path.display())
+        ));
+    }
+    
+    // 读取密码
+    let password = crate::password::PasswordManager::read_password_interactive("请输入备份密码")?;
+    
+    // 从备份恢复密钥
+    let key = crate::keymgmt::KeyManager::recover_from_backup(backup_path, &password)?;
+    
+    // 保存恢复的密钥
+    crate::keymgmt::KeyManager::save_key(&key)?;
+    
+    println!("✅ 密钥恢复成功！");
+    println!("  已从备份文件恢复密钥并保存到配置文件");
+    println!("  现在可以使用新密钥进行加密/解密操作");
     
     Ok(())
 }

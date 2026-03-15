@@ -79,6 +79,7 @@ leolock list . --show-original
 | `leolock encrypt <路径>` | 加密文件或文件夹 |
 | `leolock decrypt <路径>` | 解密文件或文件夹 |
 | `leolock list <路径>` | 列出加密文件信息 |
+| `leolock recover --backup <文件>` | 从备份文件恢复密钥 |
 | `leolock completions <shell>` | 生成shell补全脚本 |
 
 **常用选项:**
