@@ -58,6 +58,7 @@ impl FileHeader {
         4 + 1 + 4 // magic(4) + version(1) + filename_metadata_len(4)
     }
     
+    #[allow(dead_code)]
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         writer.write_all(&self.magic)?;
         writer.write_all(&[self.version])?;
