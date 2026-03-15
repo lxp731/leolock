@@ -50,6 +50,16 @@ struct Cli {
     command: Option<Commands>,
 }
 
+/// 配置子命令
+#[derive(Subcommand)]
+enum ConfigCommands {
+    /// 显示当前配置
+    Show,
+    
+    /// 验证配置文件
+    Validate,
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// 初始化工具（首次使用前必须运行）
@@ -110,6 +120,13 @@ enum Commands {
         #[arg(long)]
         backup: PathBuf,
     },
+    
+    /// 配置管理
+    Config {
+        /// 配置子命令
+        #[command(subcommand)]
+        subcommand: ConfigCommands,
+    },
 }
 
 fn main() -> Result<()> {
@@ -137,6 +154,10 @@ fn main() -> Result<()> {
         },
         Some(Commands::Recover { backup }) => {
             handle_recover(&backup)
+        },
+        Some(Commands::Config { subcommand }) => match subcommand {
+            ConfigCommands::Show => handle_config_show(),
+            ConfigCommands::Validate => handle_config_validate(),
         },
         None => {
             let mut cmd = Cli::command();
@@ -567,6 +588,51 @@ fn handle_list(
     println!("  总文件数: {}", total_files);
     println!("  加密文件数: {}", encrypted_files);
     println!("  普通文件数: {}", total_files - encrypted_files);
+    
+    Ok(())
+}
+
+/// 处理配置显示命令
+fn handle_config_show() -> Result<()> {
+    println!("📋 显示当前配置");
+    
+    // 加载配置
+    let config = Config::load()?;
+    
+    // 使用TOML格式显示（更易读）
+    let toml_string = toml::to_string_pretty(&config).map_err(|e| {
+        crate::errors::BjtError::ConfigError(format!("序列化配置失败: {}", e))
+    })?;
+    
+    println!("{}", toml_string);
+    
+    // 显示配置文件路径
+    if let Ok(config_path) = Config::config_file_path() {
+        println!("\n📁 配置文件路径: {}", config_path.display());
+    }
+    
+    Ok(())
+}
+
+/// 处理配置验证命令
+fn handle_config_validate() -> Result<()> {
+    println!("🔍 验证配置文件...");
+    
+    // 尝试加载配置
+    let config = Config::load()?;
+    
+    println!("✅ 配置文件验证通过");
+    println!("  配置文件路径: {:?}", Config::config_file_path()?);
+    println!("  初始化状态: {}", config.initialized);
+    println!("  盐值配置: {}", config.salt.is_some());
+    println!("  文件名加密默认: {}", !config.preserve_original_filename);
+    println!("  进度显示: {}", config.show_progress);
+    println!("  最大文件大小: {} bytes", config.max_file_size);
+    
+    // 检查配置文件权限
+    check_config_security()?;
+    
+    println!("✅ 所有安全检查通过");
     
     Ok(())
 }
