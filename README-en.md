@@ -15,6 +15,8 @@ A secure file encryption/decryption command-line tool using AES-256-GCM encrypti
 - **File listing**: View encrypted file information with sorting and original filename display
 - **Runtime security checks**: Automatically detects configuration file permission issues
 - **Simplified password management**: No separate password hash file, password directly derives key
+- **Fast mode**: Optional filename preservation for faster small file processing
+- **I/O optimization**: Single write operation reduces system call overhead
 
 ## 🚀 Quick Start
 
@@ -38,15 +40,24 @@ Set password, generate configuration and keys.
 
 ### 3. Encrypt files
 ```bash
+# Full mode (default): Encrypts both file content and filename
 leolock encrypt secret.txt
+
+# Fast mode: Encrypts only file content, preserves filename
+leolock encrypt secret.txt --fast
+
+# Keep original file
+leolock encrypt secret.txt --keep
 ```
-Enter password, file is encrypted as `secret.txt.leo`.
+Enter password, file is encrypted as:
+- Full mode: `random_hash.leo` (filename encrypted)
+- Fast mode: `secret.txt.leo` (original filename preserved)
 
 ### 4. Decrypt files
 ```bash
 leolock decrypt secret.txt.leo
 ```
-Enter password, restore original file.
+Enter password, restore original file (automatically detects file format).
 
 ### 5. View files
 ```bash
@@ -72,6 +83,7 @@ leolock list . --show-original
 
 **Common options:**
 - `-k, --keep`: Keep source file (do not delete)
+- `-F, --fast`: Fast mode (do not encrypt filename)
 - `--show-original`: Show original filename (requires password)
 - `--sort-by-size <asc/desc>`: Sort by file size
 

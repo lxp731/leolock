@@ -15,6 +15,8 @@
 - **文件列表功能**: 查看加密文件信息，支持排序和原文件名显示
 - **运行时安全检查**: 自动检测配置文件权限问题
 - **简化密码管理**: 无需单独的密码哈希文件，密码直接派生密钥
+- **快速模式**: 可选不加密文件名，提升小文件处理速度
+- **I/O优化**: 单次写入操作，减少系统调用开销
 
 ## 🚀 快速开始
 
@@ -38,15 +40,24 @@ leolock init
 
 ### 3. 加密文件
 ```bash
+# 完全模式（默认）：加密文件内容和文件名
 leolock encrypt secret.txt
+
+# 快速模式：仅加密文件内容，不加密文件名
+leolock encrypt secret.txt --fast
+
+# 保留原文件
+leolock encrypt secret.txt --keep
 ```
-输入密码，文件被加密为 `secret.txt.leo`。
+输入密码，文件被加密为：
+- 完全模式：`随机哈希.leo`（文件名加密）
+- 快速模式：`secret.txt.leo`（保留原文件名）
 
 ### 4. 解密文件
 ```bash
 leolock decrypt secret.txt.leo
 ```
-输入密码，恢复原文件。
+输入密码，恢复原文件（自动识别文件格式）。
 
 ### 5. 查看文件
 ```bash
@@ -72,6 +83,7 @@ leolock list . --show-original
 
 **常用选项:**
 - `-k, --keep`: 保留源文件（不删除）
+- `-F, --fast`: 快速模式（不加密文件名）
 - `--show-original`: 显示原文件名（需要密码）
 - `--sort-by-size <asc/desc>`: 按文件大小排序
 
