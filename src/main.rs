@@ -563,21 +563,23 @@ fn handle_list(
 
 /// 处理配置显示命令
 fn handle_config_show() -> Result<()> {
-    println!("📋 显示当前配置");
+    // 加载配置并获取实际使用的配置文件路径
+    let (_config, config_path_opt) = Config::load_with_path()?;
     
-    // 加载配置
-    let config = Config::load()?;
-    
-    // 使用TOML格式显示（更易读）
-    let toml_string = toml::to_string_pretty(&config).map_err(|e| {
-        crate::errors::BjtError::ConfigError(format!("序列化配置失败: {}", e))
-    })?;
-    
-    println!("{}", toml_string);
-    
-    // 显示配置文件路径
-    if let Ok(config_path) = Config::config_file_path() {
-        println!("\n📁 配置文件路径: {}", config_path.display());
+    match config_path_opt {
+        Some(config_path) => {
+            // 直接读取并显示原始配置文件内容
+            let content = std::fs::read_to_string(&config_path)?;
+            println!("{}", content);
+        }
+        None => {
+            println!("❌ 未找到配置文件");
+            println!();
+            println!("💡 工具未初始化，请先执行初始化操作:");
+            println!(" leolock init");
+            println!();
+            println!(" 配置文件将保存在: {}", Config::config_file_path().unwrap_or_default().display());
+        }
     }
     
     Ok(())
@@ -587,17 +589,26 @@ fn handle_config_show() -> Result<()> {
 fn handle_config_validate() -> Result<()> {
     println!("🔍 验证配置文件...");
     
-    // 尝试加载配置
-    let config = Config::load()?;
+    // 尝试加载配置并获取路径
+    let (config, config_path_opt) = Config::load_with_path()?;
     
-    println!("✅ 配置文件验证通过");
-    println!("  配置文件路径: {:?}", Config::config_file_path()?);
-    println!("  初始化状态: {}", config.is_initialized());
-    println!("  盐值配置: {}", config.salt.is_some());
-    println!("  文件名加密默认: {}", !config.preserve_original_filename);
-    println!("  最大文件大小: {} bytes", config.max_file_size);
-    
-    println!("✅ 配置验证完成");
+    match config_path_opt {
+        Some(config_path) => {
+            println!("✅ 配置文件验证通过");
+            println!("  配置文件路径: {}", config_path.display());
+            println!("  初始化状态: {}", config.is_initialized());
+            println!("  盐值配置: {}", config.salt.is_some());
+            println!("  文件名加密默认: {}", !config.preserve_original_filename);
+            println!("  最大文件大小: {} bytes", config.max_file_size);
+            println!("  配置版本: v{}", config.file_format_version);
+            println!("✅ 配置验证完成");
+        }
+        None => {
+            println!("❌ 未找到配置文件");
+            println!("💡 工具未初始化，请先执行 'leolock init'");
+            println!("📝 初始化将创建配置文件并设置密码");
+        }
+    }
     
     Ok(())
 }

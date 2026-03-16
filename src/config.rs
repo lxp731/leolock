@@ -78,6 +78,11 @@ impl Config {
     
     /// 加载配置文件
     pub fn load() -> Result<Self> {
+        Self::load_with_path().map(|(config, _)| config)
+    }
+    
+    /// 加载配置文件并返回实际使用的路径
+    pub fn load_with_path() -> Result<(Self, Option<PathBuf>)> {
         // 1. 尝试从环境变量获取配置文件路径
         let config_paths = Self::get_config_paths();
         
@@ -88,12 +93,12 @@ impl Config {
                     BjtError::ConfigError(format!("解析配置文件失败 {}: {}", path.display(), e))
                 })?;
                 
-                return Ok(config);
+                return Ok((config, Some(path)));
             }
         }
         
         // 2. 使用默认配置（未初始化状态）
-        Ok(Config::default())
+        Ok((Config::default(), None))
     }
     
     /// 获取可能的配置文件路径
