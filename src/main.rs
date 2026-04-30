@@ -193,7 +193,7 @@ fn handle_init() -> Result<()> {
         let password = PasswordManager::read_password_interactive("请输入密码（至少8位，包含数字和字母）")?;
         let confirm = PasswordManager::read_password_interactive("请确认密码")?;
         
-        if password != confirm {
+        if *password != *confirm {
             println!("❌ 两次输入的密码不一致，请重新输入");
             continue;
         }
@@ -218,9 +218,10 @@ fn handle_init() -> Result<()> {
     
     // 使用密码派生主密钥
     let key = crate::crypto::CryptoManager::derive_key_from_password(&password, &salt)?;
+    let key_zeroizing = zeroize::Zeroizing::new(key);
     
     // 保存密钥和盐值
-    KeyManager::save_key(&key)?;
+    KeyManager::save_key(&key_zeroizing)?;
     println!("✅ 主密钥已保存");
     
     // 保存盐值到配置（设置盐值即表示已初始化）
@@ -246,7 +247,7 @@ fn handle_init() -> Result<()> {
     println!("💾 创建备份文件...");
     
     // 创建备份文件
-    let backup_path = KeyManager::create_backup(&key, &password)?;
+    let backup_path = KeyManager::create_backup(&key_zeroizing, &password)?;
     
     // 显示备份警告
     KeyManager::show_backup_warning(&backup_path);
@@ -281,7 +282,8 @@ fn get_key_from_password() -> Result<[u8; 32]> {
     })?;
     
     // 使用密码派生密钥
-    crate::crypto::CryptoManager::derive_key_from_password(&password, &salt)
+    let key = crate::crypto::CryptoManager::derive_key_from_password(&password, &salt)?;
+    Ok(key)
 }
 
 

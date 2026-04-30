@@ -5,6 +5,7 @@ use argon2::{
 };
 use rand::rngs::OsRng;
 use rpassword::read_password;
+use zeroize::Zeroizing;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
@@ -38,38 +39,40 @@ impl PasswordManager {
             .is_ok())
     }
 
-    /// 交互式输入密码（无回显）
-    pub fn read_password_interactive(prompt: &str) -> Result<String> {
+    /// 交互式输入密码（无回显，且自动清理内存）
+    pub fn read_password_interactive(prompt: &str) -> Result<Zeroizing<String>> {
         print!("{}: ", prompt);
         io::stdout().flush().map_err(|e| {
             BjtError::PasswordError(format!("刷新输出失败: {}", e))
         })?;
 
         // 尝试使用rpassword，如果失败则回退到标准输入
-        match read_password() {
-            Ok(password) => Ok(password),
+        let password = match read_password() {
+            Ok(p) => p,
             Err(_e) => {
                 // rpassword失败，尝试从标准输入读取（有回显，用于非交互式环境）
                 println!("[注意: 使用标准输入读取密码]");
-                let mut password = String::new();
-                io::stdin().read_line(&mut password).map_err(|e| {
+                let mut p = String::new();
+                io::stdin().read_line(&mut p).map_err(|e| {
                     BjtError::PasswordError(format!("从标准输入读取密码失败: {}", e))
                 })?;
                 // 移除换行符
-                if password.ends_with('\n') {
-                    password.pop();
-                    if password.ends_with('\r') {
-                        password.pop();
+                if p.ends_with('\n') {
+                    p.pop();
+                    if p.ends_with('\r') {
+                        p.pop();
                     }
                 }
-                Ok(password)
+                p
             }
-        }
+        };
+        
+        Ok(Zeroizing::new(password))
     }
 
     /// 交互式修改密码
     #[allow(dead_code)]
-    pub fn change_password_interactive() -> Result<(String, String)> {
+    pub fn change_password_interactive() -> Result<(Zeroizing<String>, Zeroizing<String>)> {
         println!("🔄 修改密码");
 
         // 输入旧密码
@@ -86,7 +89,7 @@ impl PasswordManager {
 
             let pwd2 = Self::read_password_interactive("请确认新密码")?;
             
-            if pwd1 != pwd2 {
+            if *pwd1 != *pwd2 {
                 println!("❌ 两次输入的密码不一致，请重新输入");
                 continue;
             }

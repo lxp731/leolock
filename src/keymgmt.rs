@@ -5,6 +5,7 @@ use crate::errors::{BjtError, Result};
 use chrono::Local;
 use dirs::home_dir;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -43,8 +44,9 @@ impl KeyManager {
     #[allow(dead_code)]
     pub fn generate_and_save_key() -> Result<[u8; 32]> {
         let key = CryptoManager::generate_key()?;
-        Self::save_key(&key)?;
-        Ok(key)
+        let key_zeroizing = Zeroizing::new(key);
+        Self::save_key(&key_zeroizing)?;
+        Ok(*key_zeroizing)
     }
 
     /// 保存密钥到文件
@@ -135,9 +137,10 @@ impl KeyManager {
 
         // 从密码派生加密密钥
         let encryption_key = CryptoManager::derive_key_from_password(password, &salt)?;
+        let encryption_key_zeroizing = Zeroizing::new(encryption_key);
 
         // 加密密钥数据
-        let encrypted_key = CryptoManager::encrypt_data(key, &encryption_key)?;
+        let encrypted_key = CryptoManager::encrypt_data(key, &encryption_key_zeroizing)?;
 
         // 创建备份数据结构
         let backup_data = BackupData {
@@ -191,11 +194,12 @@ impl KeyManager {
             password,
             &backup_data.salt,
         )?;
+        let encryption_key_zeroizing = Zeroizing::new(encryption_key);
 
         // 解密密钥数据
         let decrypted_key = CryptoManager::decrypt_data(
             &backup_data.encrypted_key,
-            &encryption_key,
+            &encryption_key_zeroizing,
         )?;
 
         if decrypted_key.len() != 32 {

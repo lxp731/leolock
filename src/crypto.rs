@@ -1,27 +1,35 @@
 use crate::errors::{BjtError, Result};
 use crate::utils::Utils;
 use aes_gcm::{
-    aead::{Aead, KeyInit},
+    aead::{Aead, AeadInPlace, KeyInit, Payload},
     Aes256Gcm, Key, Nonce,
 };
 use chrono::{DateTime, Utc};
 use getrandom::getrandom;
+use zeroize::Zeroize;
 use std::fs;
-use std::io::{Read, Write, Seek, SeekFrom};
+use std::io::{Read, Write, BufReader, BufWriter};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
 pub const KEY_SIZE: usize = 32; // AES-256密钥大小
 const NONCE_SIZE: usize = 12; // GCM nonce大小
-const MAGIC_BYTES: [u8; 4] = [0x4C, 0x45, 0x4F, 0x32]; // "LEO2"
-const FILE_VERSION: u8 = 2;
+const CHUNK_SIZE: usize = 1024 * 1024; // 提升至 1MB 分块大小
+const IO_BUFFER_SIZE: usize = 2 * 1024 * 1024; // 2MB IO 缓存
+const MAGIC_BYTES: [u8; 4] = [0x4C, 0x45, 0x4F, 0x33]; 
+const FILE_VERSION: u8 = 3;
+const TAG_SIZE: usize = 16; // GCM 认证标签大小
+
 
 /// 文件头部结构
-#[derive(Debug)]
+#[derive(Debug, Zeroize)]
+#[zeroize(drop)]
 struct FileHeader {
     magic: [u8; 4],
     version: u8,
     filename_metadata_len: u32,
+    #[zeroize(skip)]
+    is_streaming: bool,
 }
 
 /// 加密文件信息
@@ -45,25 +53,25 @@ pub struct FileInfo {
 }
 
 impl FileHeader {
-    fn new(filename_metadata_len: u32) -> Self {
+    fn new(filename_metadata_len: u32, is_streaming: bool) -> Self {
         Self {
             magic: MAGIC_BYTES,
             version: FILE_VERSION,
             filename_metadata_len,
+            is_streaming,
         }
     }
     
-    /// 获取头部大小（固定9字节）
-    fn size(&self) -> usize {
-        4 + 1 + 4 // magic(4) + version(1) + filename_metadata_len(4)
-    }
-    
-    #[allow(dead_code)]
-    fn write(&self, writer: &mut impl Write) -> Result<()> {
-        writer.write_all(&self.magic)?;
-        writer.write_all(&[self.version])?;
-        writer.write_all(&self.filename_metadata_len.to_le_bytes())?;
-        Ok(())
+    /// 获取用于 AAD 的字节 (仅限 V3+)
+    fn to_aad(&self) -> Vec<u8> {
+        let mut aad = Vec::new();
+        aad.extend_from_slice(&self.magic);
+        aad.push(self.version);
+        aad.extend_from_slice(&self.filename_metadata_len.to_le_bytes());
+        if self.version >= 3 {
+            aad.push(if self.is_streaming { 1 } else { 0 });
+        }
+        aad
     }
     
     /// 写入头部到缓冲区
@@ -71,6 +79,9 @@ impl FileHeader {
         buffer.extend_from_slice(&self.magic);
         buffer.push(self.version);
         buffer.extend_from_slice(&self.filename_metadata_len.to_le_bytes());
+        if self.version >= 3 {
+            buffer.push(if self.is_streaming { 1 } else { 0 });
+        }
         Ok(())
     }
     
@@ -78,8 +89,9 @@ impl FileHeader {
         let mut magic = [0u8; 4];
         reader.read_exact(&mut magic)?;
         
-        if magic != MAGIC_BYTES {
-            return Err(BjtError::CryptoError("无效的文件格式".to_string()));
+        // 支持 LEO2 (旧版) 和 LEO3 (新版)
+        if magic != MAGIC_BYTES && magic != [0x4C, 0x45, 0x4F, 0x32] {
+            return Err(BjtError::CryptoError("无效的文件格式或版本不支持".to_string()));
         }
         
         let mut version_bytes = [0u8; 1];
@@ -90,10 +102,19 @@ impl FileHeader {
         reader.read_exact(&mut len_bytes)?;
         let filename_metadata_len = u32::from_le_bytes(len_bytes);
         
+        let is_streaming = if version >= 3 {
+            let mut stream_byte = [0u8; 1];
+            reader.read_exact(&mut stream_byte)?;
+            stream_byte[0] == 1
+        } else {
+            false
+        };
+        
         Ok(Self {
             magic,
             version,
             filename_metadata_len,
+            is_streaming,
         })
     }
 }
@@ -118,8 +139,8 @@ impl CryptoManager {
         Ok(Aes256Gcm::new(key))
     }
 
-    /// 加密数据
-    pub fn encrypt_data(data: &[u8], key: &[u8; KEY_SIZE]) -> Result<Vec<u8>> {
+    /// 加密数据 (带可选 AAD)
+    pub fn encrypt_data_with_aad(data: &[u8], key: &[u8; KEY_SIZE], aad: &[u8]) -> Result<Vec<u8>> {
         let cipher = Self::create_cipher(key)?;
         
         // 生成随机nonce
@@ -129,8 +150,13 @@ impl CryptoManager {
         })?;
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        // 加密数据
-        let ciphertext = cipher.encrypt(nonce, data).map_err(|e| {
+        // 加密数据，附带 AAD
+        let payload = Payload {
+            msg: data,
+            aad,
+        };
+        
+        let ciphertext = cipher.encrypt(nonce, payload).map_err(|e| {
             BjtError::CryptoError(format!("加密数据失败: {}", e))
         })?;
 
@@ -142,8 +168,13 @@ impl CryptoManager {
         Ok(result)
     }
 
-    /// 解密数据
-    pub fn decrypt_data(encrypted_data: &[u8], key: &[u8; KEY_SIZE]) -> Result<Vec<u8>> {
+    /// 加密数据 (兼容原接口)
+    pub fn encrypt_data(data: &[u8], key: &[u8; KEY_SIZE]) -> Result<Vec<u8>> {
+        Self::encrypt_data_with_aad(data, key, &[])
+    }
+
+    /// 解密数据 (带可选 AAD)
+    pub fn decrypt_data_with_aad(encrypted_data: &[u8], key: &[u8; KEY_SIZE], aad: &[u8]) -> Result<Vec<u8>> {
         if encrypted_data.len() < NONCE_SIZE {
             return Err(BjtError::CryptoError(
                 "加密数据太短，无法提取nonce".to_string(),
@@ -158,10 +189,116 @@ impl CryptoManager {
         // 提取密文
         let ciphertext = &encrypted_data[NONCE_SIZE..];
 
-        // 解密数据
-        cipher.decrypt(nonce, ciphertext).map_err(|e| {
+        // 解密数据，附带 AAD
+        let payload = Payload {
+            msg: ciphertext,
+            aad,
+        };
+        
+        cipher.decrypt(nonce, payload).map_err(|e| {
             BjtError::CryptoError(format!("解密数据失败: {}", e))
         })
+    }
+
+    /// 解密数据 (兼容原接口)
+    pub fn decrypt_data(encrypted_data: &[u8], key: &[u8; KEY_SIZE]) -> Result<Vec<u8>> {
+        Self::decrypt_data_with_aad(encrypted_data, key, &[])
+    }
+
+    /// 流式加密 (优化版：原地加密，零内存分配)
+    pub fn encrypt_stream(
+        reader: &mut impl Read,
+        writer: &mut impl Write,
+        key: &[u8; KEY_SIZE],
+        aad: &[u8],
+    ) -> Result<()> {
+        let cipher = Self::create_cipher(key)?;
+        
+        let mut base_nonce = [0u8; NONCE_SIZE];
+        getrandom(&mut base_nonce).map_err(|e| {
+            BjtError::CryptoError(format!("生成随机nonce失败: {}", e))
+        })?;
+        writer.write_all(&base_nonce)?;
+        
+        // 预分配缓冲区，复用内存
+        let mut buffer = vec![0u8; CHUNK_SIZE];
+        let mut counter: u64 = 0;
+        
+        loop {
+            let n = reader.read(&mut buffer)?;
+            if n == 0 { break; }
+            
+            let mut chunk_nonce_bytes = base_nonce;
+            let counter_bytes = counter.to_le_bytes();
+            for i in 0..8 {
+                chunk_nonce_bytes[i] ^= counter_bytes[i];
+            }
+            let nonce = Nonce::from_slice(&chunk_nonce_bytes);
+            
+            // 原地加密：不产生新的 Vec
+            let tag = cipher
+                .encrypt_in_place_detached(nonce, aad, &mut buffer[..n])
+                .map_err(|e| BjtError::CryptoError(format!("分块加密失败: {}", e)))?;
+            
+            // 写入格式：[分块长度(u32)][加密数据][16字节标签]
+            writer.write_all(&(n as u32).to_le_bytes())?;
+            writer.write_all(&buffer[..n])?;
+            writer.write_all(tag.as_slice())?;
+            
+            counter += 1;
+        }
+        
+        Ok(())
+    }
+
+    /// 流式解密 (优化版：原地解密)
+    pub fn decrypt_stream(
+        reader: &mut impl Read,
+        writer: &mut impl Write,
+        key: &[u8; KEY_SIZE],
+        aad: &[u8],
+    ) -> Result<()> {
+        let cipher = Self::create_cipher(key)?;
+        
+        let mut base_nonce = [0u8; NONCE_SIZE];
+        reader.read_exact(&mut base_nonce)?;
+        
+        let mut buffer = vec![0u8; CHUNK_SIZE];
+        let mut counter: u64 = 0;
+        
+        loop {
+            let mut len_bytes = [0u8; 4];
+            match reader.read_exact(&mut len_bytes) {
+                Ok(_) => (),
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(e.into()),
+            }
+            let chunk_len = u32::from_le_bytes(len_bytes) as usize;
+            
+            // 读取加密数据和标签
+            reader.read_exact(&mut buffer[..chunk_len])?;
+            let mut tag_bytes = [0u8; TAG_SIZE];
+            reader.read_exact(&mut tag_bytes)?;
+            let tag = aes_gcm::Tag::from_slice(&tag_bytes);
+            
+            let mut chunk_nonce_bytes = base_nonce;
+            let counter_bytes = counter.to_le_bytes();
+            for i in 0..8 {
+                chunk_nonce_bytes[i] ^= counter_bytes[i];
+            }
+            let nonce = Nonce::from_slice(&chunk_nonce_bytes);
+            
+            // 原地解密
+            cipher
+                .decrypt_in_place_detached(nonce, aad, &mut buffer[..chunk_len], tag)
+                .map_err(|e| BjtError::CryptoError(format!("分块解密失败: {}", e)))?;
+            
+            writer.write_all(&buffer[..chunk_len])?;
+            
+            counter += 1;
+        }
+        
+        Ok(())
     }
 
     /// 加密文件名
@@ -230,7 +367,7 @@ impl CryptoManager {
         }
     }
 
-    /// 加密文件（新版，支持文件名加密）
+    /// 加密文件（支持文件名加密、流式加密和 AAD）
     pub fn encrypt_file_v2(
         input_path: &std::path::Path, 
         key: &[u8; KEY_SIZE], 
@@ -243,15 +380,7 @@ impl CryptoManager {
             .to_string_lossy()
             .to_string();
         
-        // 读取文件内容
-        let data = fs::read(input_path).map_err(|e| {
-            BjtError::FileError(format!("读取文件失败 {}: {}", input_path.display(), e))
-        })?;
-
-        // 加密文件内容
-        let encrypted_data = Self::encrypt_data(&data, key)?;
-        
-        // 创建输出文件
+        // 生成输出文件名
         let display_filename = Utils::get_display_filename(&original_filename, preserve_filename);
         let output_path = if let Some(parent) = input_path.parent() {
             parent.join(&display_filename)
@@ -259,34 +388,37 @@ impl CryptoManager {
             PathBuf::from(&display_filename)
         };
         
-        if preserve_filename {
-            // 保留文件名：使用旧版格式（向后兼容）
-            // 单次写入：加密数据
-            fs::write(&output_path, &encrypted_data)?;
-        } else {
-            // 加密文件名：使用新版格式
-            // 1. 加密文件名
-            let encrypted_filename = Self::encrypt_filename(&original_filename, key)?;
+        // 创建临时输出文件
+        let tmp_path = output_path.with_extension("leo.tmp");
+        
+        {
+            let mut input_file = BufReader::with_capacity(IO_BUFFER_SIZE, fs::File::open(input_path)?);
+            let mut tmp_file = BufWriter::with_capacity(IO_BUFFER_SIZE, fs::File::create(&tmp_path)?);
             
-            // 2. 创建文件头部
-            let header = FileHeader::new(encrypted_filename.len() as u32);
-            
-            // 3. 计算总大小并预分配缓冲区
-            let total_size = header.size() + encrypted_filename.len() + encrypted_data.len();
-            let mut buffer = Vec::with_capacity(total_size);
-            
-            // 4. 写入头部到缓冲区
-            header.write_to_buffer(&mut buffer)?;
-            
-            // 5. 写入加密的文件名到缓冲区
-            buffer.extend_from_slice(&encrypted_filename);
-            
-            // 6. 写入加密内容到缓冲区
-            buffer.extend_from_slice(&encrypted_data);
-            
-            // 7. 单次写入整个缓冲区到文件
-            fs::write(&output_path, &buffer)?;
+            if preserve_filename {
+                // 保留文件名：旧版兼容模式
+                let mut data = Vec::new();
+                input_file.read_to_end(&mut data)?;
+                let encrypted_data = Self::encrypt_data(&data, key)?;
+                tmp_file.write_all(&encrypted_data)?;
+            } else {
+                // 加密文件名：使用新版流式格式 (V3)
+                let encrypted_filename = Self::encrypt_filename(&original_filename, key)?;
+                let header = FileHeader::new(encrypted_filename.len() as u32, true);
+                let aad = header.to_aad();
+                
+                let mut header_buf = Vec::new();
+                header.write_to_buffer(&mut header_buf)?;
+                tmp_file.write_all(&header_buf)?;
+                tmp_file.write_all(&encrypted_filename)?;
+                
+                Self::encrypt_stream(&mut input_file, &mut tmp_file, key, &aad)?;
+            }
+            tmp_file.flush()?;
         }
+        
+        // 原子替换：将临时文件重命名为最终文件
+        fs::rename(&tmp_path, &output_path)?;
         
         println!("✅ 加密完成: {} -> {}", 
             input_path.display(), 
@@ -294,7 +426,7 @@ impl CryptoManager {
         );
         
         if !preserve_filename {
-            println!("  原文件名已加密存储在文件头部");
+            println!("  原文件名已加密存储在文件头部 (AAD 保护)");
         }
 
         // 如果不保留原始文件，安全删除源文件
@@ -306,7 +438,7 @@ impl CryptoManager {
         Ok(output_path)
     }
     
-    /// 解密文件（新版，支持文件名恢复）
+    /// 解密文件（支持文件名恢复、流式解密和 AAD）
     pub fn decrypt_file_v2(
         input_path: &std::path::Path, 
         key: &[u8; KEY_SIZE], 
@@ -315,7 +447,7 @@ impl CryptoManager {
         // 检测文件版本
         let version = Self::detect_file_version(input_path)?;
         
-        let mut input_file = fs::File::open(input_path)?;
+        let mut input_file = BufReader::with_capacity(IO_BUFFER_SIZE, fs::File::open(input_path)?);
         
         match version {
             1 => {
@@ -325,7 +457,7 @@ impl CryptoManager {
                 
                 let decrypted_data = Self::decrypt_data(&encrypted_data, key)?;
                 
-                // 从文件名推断原文件名（移除.leo后缀）
+                // 从文件名推断原文件名
                 let input_str = input_path.to_string_lossy();
                 let output_filename = if let Some(stripped) = input_str.strip_suffix(".leo") {
                     stripped.to_string()
@@ -346,32 +478,26 @@ impl CryptoManager {
                     output_path.display()
                 );
                 
-                // 如果不保留原始文件，则安全删除它
                 if !keep_original {
                     Utils::secure_delete_file(input_path)?;
-                    println!("🗑️  已安全删除加密文件: {}", input_path.display());
                 }
                 
                 Ok(output_path)
             }
             2 => {
-                // 新版文件：读取头部和加密的文件名
+                // V2 版本：非流式，加密文件名
                 let header = FileHeader::read(&mut input_file)?;
                 
-                // 读取加密的文件名
                 let mut encrypted_filename = vec![0u8; header.filename_metadata_len as usize];
                 input_file.read_exact(&mut encrypted_filename)?;
                 
-                // 解密文件名
                 let original_filename = Self::decrypt_filename(&encrypted_filename, key)?;
                 
-                // 读取并解密文件内容
                 let mut encrypted_data = Vec::new();
                 input_file.read_to_end(&mut encrypted_data)?;
                 
                 let decrypted_data = Self::decrypt_data(&encrypted_data, key)?;
                 
-                // 创建输出文件
                 let output_path = if let Some(parent) = input_path.parent() {
                     parent.join(&original_filename)
                 } else {
@@ -380,16 +506,61 @@ impl CryptoManager {
                 
                 fs::write(&output_path, &decrypted_data)?;
                 
-                println!("✅ 解密完成: {} -> {}", 
+                println!("✅ 解密完成 (V2): {} -> {}", 
                     input_path.display(), 
                     output_path.display()
                 );
-                println!("  原文件名已恢复: {}", original_filename);
                 
-                // 如果不保留原始文件，则安全删除它
                 if !keep_original {
                     Utils::secure_delete_file(input_path)?;
-                    println!("🗑️  已安全删除加密文件: {}", input_path.display());
+                }
+                
+                Ok(output_path)
+            }
+            3 => {
+                // V3 版本：流式加密，AAD 保护
+                let header = FileHeader::read(&mut input_file)?;
+                let aad = header.to_aad();
+                
+                // 读取并解密文件名
+                let mut encrypted_filename = vec![0u8; header.filename_metadata_len as usize];
+                input_file.read_exact(&mut encrypted_filename)?;
+                let original_filename = Self::decrypt_filename(&encrypted_filename, key)?;
+                
+                // 创建临时输出文件
+                let output_path = if let Some(parent) = input_path.parent() {
+                    parent.join(&original_filename)
+                } else {
+                    PathBuf::from(&original_filename)
+                };
+                let tmp_path = output_path.with_extension("tmp");
+                
+                {
+                    let mut output_file = BufWriter::with_capacity(IO_BUFFER_SIZE, fs::File::create(&tmp_path)?);
+                    
+                    if header.is_streaming {
+                        // 执行流式解密，附带 AAD 校验
+                        Self::decrypt_stream(&mut input_file, &mut output_file, key, &aad)?;
+                    } else {
+                        // 非流式 V3 (理论上不应出现，但逻辑上支持)
+                        let mut encrypted_data = Vec::new();
+                        input_file.read_to_end(&mut encrypted_data)?;
+                        let decrypted_data = Self::decrypt_data_with_aad(&encrypted_data, key, &aad)?;
+                        output_file.write_all(&decrypted_data)?;
+                    }
+                    output_file.flush()?;
+                }
+                
+                // 原子替换
+                fs::rename(&tmp_path, &output_path)?;
+                
+                println!("✅ 解密完成 (V3): {} -> {}", 
+                    input_path.display(), 
+                    output_path.display()
+                );
+                
+                if !keep_original {
+                    Utils::secure_delete_file(input_path)?;
                 }
                 
                 Ok(output_path)
@@ -478,48 +649,27 @@ impl CryptoManager {
         // 检测文件版本
         let version = Self::detect_file_version(file_path)?;
         
-        let mut original_filename = None;
+        let original_filename;
         let decryptable;
 
         match version {
             1 => {
-                // 旧版文件：无法获取原文件名（除非从文件名推断）
-                decryptable = key.is_some(); // 有密钥就可以解密
-                
-                // 尝试从文件名推断原文件名
-                // 只对明显是"原文件名+.leo"格式的文件进行推断
-                let filename = file_path.file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy();
-                    
+                // 旧版文件
+                decryptable = key.is_some();
+                let filename = file_path.file_name().unwrap_or_default().to_string_lossy();
                 if let Some(stripped) = filename.strip_suffix(".leo") {
-                    // 只有当移除后缀后文件名仍然有效时才显示
-                    if !stripped.is_empty() && stripped != filename {
-                        // 检查是否看起来像原文件名（包含点表示有扩展名，或者不是简单单词）
-                        if stripped.contains('.') || stripped.len() > 8 {
-                            original_filename = Some(stripped.to_string());
-                        } else {
-                            // 简单单词如"small"、"test"等，不显示为原文件名
-                            original_filename = Some("[文件名已加密]".to_string());
-                        }
-                    }
+                    original_filename = Some(stripped.to_string());
+                } else {
+                    original_filename = Some(filename.to_string());
                 }
             }
-            2 => {
-                // 新版文件：尝试读取并解密文件名
+            2 | 3 => {
+                // V2 和 V3 版本：读取并尝试解密文件名
                 let mut file = fs::File::open(file_path)?;
-                
-                // 跳过魔术字节和版本号
-                file.seek(SeekFrom::Start(5))?;
-                
-                // 读取文件名元数据长度
-                let mut len_bytes = [0u8; 4];
-                file.read_exact(&mut len_bytes)?;
-                let metadata_len = u32::from_le_bytes(len_bytes) as usize;
+                let header = FileHeader::read(&mut file)?;
                 
                 if let Some(key) = key {
-                    // 尝试解密文件名
-                    let mut encrypted_filename = vec![0u8; metadata_len];
+                    let mut encrypted_filename = vec![0u8; header.filename_metadata_len as usize];
                     file.read_exact(&mut encrypted_filename)?;
                     
                     match Self::decrypt_filename(&encrypted_filename, key) {
@@ -528,13 +678,11 @@ impl CryptoManager {
                             decryptable = true;
                         }
                         Err(_) => {
-                            // 解密失败，可能密钥错误
                             original_filename = Some("[需要正确密钥]".to_string());
                             decryptable = false;
                         }
                     }
                 } else {
-                    // 没有提供密钥
                     original_filename = Some("[需要密钥查看]".to_string());
                     decryptable = false;
                 }

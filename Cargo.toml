@@ -1,6 +1,6 @@
 [package]
 name = "leolock"
-version = "1.0.2"
+version = "1.1.0"
 edition = "2021"
 description = "LeoLock - 安全的文件加密解密工具"
 authors = ["Burgess Leo <burgess@example.com>"]
@@ -49,6 +49,10 @@ rand = "0.8"
 getrandom = "0.2"
 sha2 = "0.10"
 shellexpand = "3.0"
+zeroize = { version = "1.7", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3.8"
 
 [profile.release]
 lto = true

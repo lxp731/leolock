@@ -16,4 +16,4 @@ Cargo.lock
 
 # 测试文件
 test_*
-test/
+tests/
