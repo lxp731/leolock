@@ -26,6 +26,9 @@ pub struct Config {
     /// 是否保留原文件名（false=加密文件名，true=保留文件名）
     pub preserve_original_filename: bool,
     
+    /// 是否显示进度条
+    pub show_progress: bool,
+    
     /// 加密文件格式版本
     pub file_format_version: u8,
     
@@ -67,6 +70,7 @@ impl Default for Config {
             default_extension: ".leo".to_string(),
             key_file_path: "~/.config/leolock/keys.toml".to_string(),
             preserve_original_filename: false,  // 默认加密文件名
+            show_progress: true,                // 默认显示进度条
             file_format_version: 2,             // 新文件格式版本
             salt: None,
         }
@@ -143,6 +147,7 @@ impl Config {
             default_extension: self.default_extension.clone(),
             key_file_path: self.key_file_path.clone(),
             preserve_original_filename: self.preserve_original_filename,
+            show_progress: self.show_progress,
             file_format_version: self.file_format_version,
             salt: self.salt.clone(),
         };
@@ -237,6 +242,7 @@ struct SafeConfig {
     pub default_extension: String,
     pub key_file_path: String,
     pub preserve_original_filename: bool,
+    pub show_progress: bool,
     pub file_format_version: u8,
     pub salt: Option<String>,
 }

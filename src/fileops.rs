@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::crypto::CryptoManager;
 use crate::errors::{BjtError, Result};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -28,7 +29,7 @@ impl FileOps {
         dir_path: &Path, 
         key: &[u8; 32], 
         keep_original: bool,
-        _show_progress: bool, // 保留参数但不使用
+        show_progress: bool,
     ) -> Result<()> {
         if !Self::is_safe_path(dir_path) {
             return Err(BjtError::FileError(format!(
@@ -93,6 +94,17 @@ impl FileOps {
         println!("文件数: {}, 总大小: {}", file_entries.len(), Self::format_bytes(total_bytes));
         println!("{}", "-".repeat(40));
 
+        let pb = if show_progress {
+            let pb = ProgressBar::new(file_entries.len() as u64);
+            pb.set_style(ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} 文件 ({eta})")
+                .unwrap()
+                .progress_chars("#>-"));
+            Some(pb)
+        } else {
+            None
+        };
+
         // 处理收集到的文件
         for (path, _file_size) in file_entries {
             // 处理文件
@@ -102,9 +114,22 @@ impl FileOps {
                 }
                 Err(e) => {
                     error_count += 1;
-                    println!("❌ 加密失败 {}: {}", path.display(), e);
+                    if let Some(ref pb) = pb {
+                        pb.suspend(|| {
+                            println!("❌ 加密失败 {}: {}", path.display(), e);
+                        });
+                    } else {
+                        println!("❌ 加密失败 {}: {}", path.display(), e);
+                    }
                 }
             }
+            if let Some(ref pb) = pb {
+                pb.inc(1);
+            }
+        }
+
+        if let Some(pb) = pb {
+            pb.finish_with_message("加密完成");
         }
 
         println!("{}", "-".repeat(40));
@@ -130,7 +155,7 @@ impl FileOps {
         dir_path: &Path, 
         key: &[u8; 32], 
         keep_original: bool,
-        _show_progress: bool, // 保留参数但不使用
+        show_progress: bool,
     ) -> Result<()> {
         if !Self::is_safe_path(dir_path) {
             return Err(BjtError::FileError(format!(
@@ -202,6 +227,17 @@ impl FileOps {
         println!("加密文件数: {}, 总大小: {}", file_entries.len(), Self::format_bytes(total_bytes));
         println!("{}", "-".repeat(40));
 
+        let pb = if show_progress {
+            let pb = ProgressBar::new(file_entries.len() as u64);
+            pb.set_style(ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} 文件 ({eta})")
+                .unwrap()
+                .progress_chars("#>-"));
+            Some(pb)
+        } else {
+            None
+        };
+
         // 处理收集到的文件
         for (path, _file_size) in file_entries {
             // 处理文件
@@ -211,9 +247,22 @@ impl FileOps {
                 }
                 Err(e) => {
                     error_count += 1;
-                    println!("❌ 解密失败 {}: {}", path.display(), e);
+                    if let Some(ref pb) = pb {
+                        pb.suspend(|| {
+                            println!("❌ 解密失败 {}: {}", path.display(), e);
+                        });
+                    } else {
+                        println!("❌ 解密失败 {}: {}", path.display(), e);
+                    }
                 }
             }
+            if let Some(ref pb) = pb {
+                pb.inc(1);
+            }
+        }
+
+        if let Some(pb) = pb {
+            pb.finish_with_message("解密完成");
         }
 
         println!("{}", "-".repeat(40));
@@ -258,8 +307,14 @@ impl FileOps {
         keep_original: bool,
         config: &Config,
     ) -> Result<()> {
-        // 使用配置中的 preserve_original_filename 设置
-        Self::encrypt_directory_with_options(dir_path, key, keep_original, config.preserve_original_filename)
+        // 使用配置中的 preserve_original_filename 和 show_progress 设置
+        Self::encrypt_directory_with_options(
+            dir_path, 
+            key, 
+            keep_original, 
+            config.preserve_original_filename, 
+            config.show_progress
+        )
     }
     
     /// 递归加密文件夹（带文件名加密选项）
@@ -268,6 +323,7 @@ impl FileOps {
         key: &[u8; 32], 
         keep_original: bool,
         preserve_filename: bool,
+        show_progress: bool,
     ) -> Result<()> {
         if !Self::is_safe_path(dir_path) {
             return Err(BjtError::FileError(format!(
@@ -332,6 +388,17 @@ impl FileOps {
         println!("文件数: {}, 总大小: {}", file_entries.len(), Self::format_bytes(total_bytes));
         println!("{}", "-".repeat(40));
 
+        let pb = if show_progress {
+            let pb = ProgressBar::new(file_entries.len() as u64);
+            pb.set_style(ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} 文件 ({eta})")
+                .unwrap()
+                .progress_chars("#>-"));
+            Some(pb)
+        } else {
+            None
+        };
+
         // 处理收集到的文件
         for (path, _file_size) in file_entries {
             // 处理文件（使用指定的文件名加密选项）
@@ -341,9 +408,22 @@ impl FileOps {
                 }
                 Err(e) => {
                     error_count += 1;
-                    println!("❌ 加密失败 {}: {}", path.display(), e);
+                    if let Some(ref pb) = pb {
+                        pb.suspend(|| {
+                            println!("❌ 加密失败 {}: {}", path.display(), e);
+                        });
+                    } else {
+                        println!("❌ 加密失败 {}: {}", path.display(), e);
+                    }
                 }
             }
+            if let Some(ref pb) = pb {
+                pb.inc(1);
+            }
+        }
+
+        if let Some(pb) = pb {
+            pb.finish_with_message("加密完成");
         }
 
         println!("{}", "-".repeat(40));
@@ -369,10 +449,10 @@ impl FileOps {
         path: &Path,
         key: &[u8; 32],
         keep_original: bool,
-        #[allow(unused_variables)] config: &Config,
+        config: &Config,
     ) -> Result<()> {
         if path.is_dir() {
-            Self::decrypt_directory_with_progress(path, key, keep_original, false)
+            Self::decrypt_directory_with_progress(path, key, keep_original, config.show_progress)
         } else {
             Self::process_file(path, key, false, keep_original).map(|_| ())
         }
