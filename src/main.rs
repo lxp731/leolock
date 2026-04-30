@@ -48,6 +48,18 @@ enum OutputFormat {
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+
+    /// 从环境变量加载密码
+    #[arg(long, global = true, env = "LEOLOCK_PASSWORD_VAR")]
+    env_pass: Option<String>,
+
+    /// 从系统钥匙串加载密码
+    #[arg(long, global = true)]
+    keyring: bool,
+
+    /// 从标准输入加载密码
+    #[arg(long, global = true)]
+    stdin: bool,
 }
 
 /// 配置子命令
@@ -63,7 +75,11 @@ enum ConfigCommands {
 #[derive(Subcommand)]
 enum Commands {
     /// 初始化工具（首次使用前必须运行）
-    Init,
+    Init {
+        /// 初始化后是否将密码保存到系统钥匙串
+        #[arg(long)]
+        save_to_keyring: bool,
+    },
     
     /// 加密文件或目录
     Encrypt {
@@ -132,28 +148,28 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    match cli.command {
-        Some(Commands::Init) => {
-            handle_init()
+    match &cli.command {
+        Some(Commands::Init { save_to_keyring }) => {
+            handle_init(*save_to_keyring)
         },
         Some(Commands::Encrypt { path, keep, fast }) => {
-            handle_encrypt(&path, keep, fast)
+            handle_encrypt(path, *keep, *fast, &cli)
         },
         Some(Commands::Decrypt { path, keep }) => {
-            handle_decrypt(&path, keep)
+            handle_decrypt(path, *keep, &cli)
         },
         Some(Commands::List { 
             path, 
             show_original, 
             sort_by_size,
         }) => {
-            Ok(handle_list(&path, show_original, sort_by_size)?)
+            Ok(handle_list(path, *show_original, sort_by_size.clone(), &cli)?)
         },
         Some(Commands::Completions { shell, output_dir }) => {
-            handle_completions(shell, &output_dir)
+            handle_completions(*shell, output_dir)
         },
         Some(Commands::Recover { backup }) => {
-            handle_recover(&backup)
+            handle_recover(backup, &cli)
         },
         Some(Commands::Config { subcommand }) => match subcommand {
             ConfigCommands::Show => handle_config_show(),
@@ -168,7 +184,7 @@ fn main() -> Result<()> {
 }
 
 /// 处理初始化命令
-fn handle_init() -> Result<()> {
+fn handle_init(save_to_keyring: bool) -> Result<()> {
     println!("🚀 开始初始化 leolock 工具...");
     println!();
     
@@ -190,7 +206,7 @@ fn handle_init() -> Result<()> {
     
     // 读取并验证密码
     let password = loop {
-        let password = PasswordManager::read_password_interactive("请输入密码（至少8位，包含数字和字母）")?;
+        let password = PasswordManager::read_password_interactive("请输入密码（至少8位，包含大小写字母、数字和符号）")?;
         let confirm = PasswordManager::read_password_interactive("请确认密码")?;
         
         if *password != *confirm {
@@ -206,6 +222,12 @@ fn handle_init() -> Result<()> {
         
         break password;
     };
+    
+    // 如果用户要求，保存到钥匙串
+    if save_to_keyring {
+        PasswordManager::set_password_to_keyring(&password)?;
+        println!("✅ 密码已安全保存到系统钥匙串");
+    }
     
     println!();
     println!("🔑 生成加密密钥...");
@@ -260,9 +282,20 @@ fn handle_init() -> Result<()> {
 }
 
 /// 验证密码并获取密钥
-fn get_key_from_password() -> Result<[u8; 32]> {
-    // 读取密码
-    let password = PasswordManager::read_password_interactive("请输入密码")?;
+fn get_key_from_password(cli: &Cli) -> Result<[u8; 32]> {
+    // 根据 CLI 参数选择密码来源
+    let password = if let Some(var_name) = &cli.env_pass {
+        println!("🔑 从环境变量加载密码...");
+        PasswordManager::get_password_from_env(var_name)?
+    } else if cli.keyring {
+        println!("🔑 从系统钥匙串加载密码...");
+        PasswordManager::get_password_from_keyring()?
+    } else if cli.stdin {
+        println!("🔑 从标准输入加载密码...");
+        PasswordManager::get_password_from_stdin()?
+    } else {
+        PasswordManager::read_password_interactive("请输入密码")?
+    };
     
     // 加载配置和盐值
     let config = Config::load().unwrap_or_default();
@@ -289,7 +322,7 @@ fn get_key_from_password() -> Result<[u8; 32]> {
 
 
 /// 处理加密命令
-fn handle_encrypt(path: &std::path::Path, keep_original: bool, fast: bool) -> Result<()> {
+fn handle_encrypt(path: &std::path::Path, keep_original: bool, fast: bool, cli: &Cli) -> Result<()> {
     if fast {
         println!("🔒 开始加密: {} (快速模式)", path.display());
         println!("  模式: 仅加密文件内容，不加密文件名");
@@ -297,7 +330,7 @@ fn handle_encrypt(path: &std::path::Path, keep_original: bool, fast: bool) -> Re
         println!("  注意: 原始文件名将保持可读");
     } else {
         println!("🔒 开始加密: {} (完全模式)", path.display());
-        println!("  模式: 加密文件内容和文件名");
+        println!("  模式: 加密文件内容 and 文件名");
         println!("  优势: 最高安全性，隐藏文件信息");
     }
     
@@ -316,7 +349,7 @@ fn handle_encrypt(path: &std::path::Path, keep_original: bool, fast: bool) -> Re
     config.preserve_original_filename = fast; // fast=true 表示保留文件名
     
     // 从密码获取密钥
-    let key = get_key_from_password()?;
+    let key = get_key_from_password(cli)?;
     
     // 执行加密（使用临时配置）
     FileOps::encrypt_path_with_config(path, &key, keep_original, &config)?;
@@ -329,7 +362,7 @@ fn handle_encrypt(path: &std::path::Path, keep_original: bool, fast: bool) -> Re
 }
 
 /// 处理解密命令
-fn handle_decrypt(path: &std::path::Path, keep_encrypted: bool) -> Result<()> {
+fn handle_decrypt(path: &std::path::Path, keep_encrypted: bool, cli: &Cli) -> Result<()> {
     println!("🔓 开始解密: {}", path.display());
     
     // 检查路径是否存在
@@ -343,7 +376,7 @@ fn handle_decrypt(path: &std::path::Path, keep_encrypted: bool) -> Result<()> {
     let _config = Config::load().unwrap_or_default();
     
     // 从密码获取密钥
-    let key = get_key_from_password()?;
+    let key = get_key_from_password(cli)?;
     
     // 执行解密
     FileOps::decrypt_path(path, &key, keep_encrypted)?;
@@ -430,6 +463,7 @@ fn handle_list(
     path: &std::path::Path, 
     show_original: bool,
     sort_by_size: Option<SortOrder>,
+    cli: &Cli,
 ) -> Result<()> {
     println!("📁 扫描目录: {}", path.display());
     println!("{}", "=".repeat(60));
@@ -437,7 +471,7 @@ fn handle_list(
     // 如果要求显示原文件名，需要密码验证
     let key = if show_original {
         println!("🔐 显示原文件名需要密码验证");
-        match get_key_from_password() {
+        match get_key_from_password(cli) {
             Ok(key) => {
                 println!("✅ 密码验证成功");
                 Some(key)
@@ -616,7 +650,7 @@ fn handle_config_validate() -> Result<()> {
 }
 
 /// 处理恢复命令
-fn handle_recover(backup_path: &Path) -> Result<()> {
+fn handle_recover(backup_path: &Path, cli: &Cli) -> Result<()> {
     println!("🔄 从备份文件恢复密钥");
     println!("备份文件: {}", backup_path.display());
     
@@ -628,7 +662,18 @@ fn handle_recover(backup_path: &Path) -> Result<()> {
     }
     
     // 读取密码
-    let password = crate::password::PasswordManager::read_password_interactive("请输入备份密码")?;
+    let password = if let Some(var_name) = &cli.env_pass {
+        println!("🔑 从环境变量加载备份密码...");
+        PasswordManager::get_password_from_env(var_name)?
+    } else if cli.keyring {
+        println!("🔑 从系统钥匙串加载备份密码...");
+        PasswordManager::get_password_from_keyring()?
+    } else if cli.stdin {
+        println!("🔑 从标准输入加载备份密码...");
+        PasswordManager::get_password_from_stdin()?
+    } else {
+        crate::password::PasswordManager::read_password_interactive("请输入备份密码")?
+    };
     
     // 从备份恢复密钥
     let key = crate::keymgmt::KeyManager::recover_from_backup(backup_path, &password)?;

@@ -3,12 +3,17 @@ use argon2::{
     password_hash::{PasswordHasher, PasswordVerifier, SaltString},
     Argon2, PasswordHash as ArgonPasswordHash,
 };
+use keyring::Entry;
 use rand::rngs::OsRng;
 use rpassword::read_password;
-use zeroize::Zeroizing;
+use std::env;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::Path;
+use zeroize::Zeroizing;
+
+const KEYRING_SERVICE: &str = "leolock";
+const KEYRING_USER: &str = "default";
 
 /// 密码验证器
 pub struct PasswordManager;
@@ -19,7 +24,7 @@ impl PasswordManager {
     pub fn hash_password(password: &str) -> Result<String> {
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
-        
+
         let password_hash = argon2
             .hash_password(password.as_bytes(), &salt)
             .map_err(|e| BjtError::PasswordError(format!("密码哈希失败: {}", e)))?
@@ -66,8 +71,57 @@ impl PasswordManager {
                 p
             }
         };
-        
+
         Ok(Zeroizing::new(password))
+    }
+
+    /// 从环境变量读取密码
+    pub fn get_password_from_env(var_name: &str) -> Result<Zeroizing<String>> {
+        match env::var(var_name) {
+            Ok(p) => Ok(Zeroizing::new(p)),
+            Err(_) => Err(BjtError::PasswordError(format!(
+                "环境变量 {} 未设置",
+                var_name
+            ))),
+        }
+    }
+
+    /// 从标准输入读取密码（非交互式，适用于管道）
+    pub fn get_password_from_stdin() -> Result<Zeroizing<String>> {
+        let mut p = String::new();
+        io::stdin().read_to_string(&mut p).map_err(|e| {
+            BjtError::PasswordError(format!("从标准输入读取失败: {}", e))
+        })?;
+        // 移除末尾换行符
+        let trimmed = p.trim_end_matches(['\r', '\n']).to_string();
+        Ok(Zeroizing::new(trimmed))
+    }
+
+    /// 从系统钥匙串获取密码
+    pub fn get_password_from_keyring() -> Result<Zeroizing<String>> {
+        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| {
+            BjtError::PasswordError(format!("访问钥匙串失败: {}", e))
+        })?;
+
+        match entry.get_password() {
+            Ok(p) => Ok(Zeroizing::new(p)),
+            Err(e) => Err(BjtError::PasswordError(format!(
+                "从钥匙串获取密码失败: {}",
+                e
+            ))),
+        }
+    }
+
+    /// 将密码保存到系统钥匙串
+    pub fn set_password_to_keyring(password: &str) -> Result<()> {
+        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| {
+            BjtError::PasswordError(format!("访问钥匙串失败: {}", e))
+        })?;
+
+        entry.set_password(password).map_err(|e| {
+            BjtError::PasswordError(format!("保存密码到钥匙串失败: {}", e))
+        })?;
+        Ok(())
     }
 
     /// 交互式修改密码
@@ -81,14 +135,14 @@ impl PasswordManager {
         // 输入新密码
         let new_password = loop {
             let pwd1 = Self::read_password_interactive("请输入新密码（至少8位）")?;
-            
-            if pwd1.len() < 8 {
-                println!("❌ 密码长度不足8位，请重新输入");
+
+            if let Err(e) = Self::validate_password_strength(&pwd1) {
+                println!("❌ {}", e);
                 continue;
             }
 
             let pwd2 = Self::read_password_interactive("请确认新密码")?;
-            
+
             if *pwd1 != *pwd2 {
                 println!("❌ 两次输入的密码不一致，请重新输入");
                 continue;
@@ -100,29 +154,54 @@ impl PasswordManager {
         Ok((old_password, new_password))
     }
 
-
-
-    /// 验证密码强度
-    #[allow(dead_code)]
+    /// 验证密码强度并提供详细反馈
     pub fn validate_password_strength(password: &str) -> Result<()> {
+        let mut score = 0;
+        let mut feedback = Vec::new();
+
         if password.len() < 8 {
             return Err(BjtError::ValidationError(
-                "密码长度必须至少8位".to_string(),
+                "密码过短：至少需要8个字符".to_string(),
             ));
         }
+        score += 1;
 
-        // 检查是否包含数字
-        if !password.chars().any(|c| c.is_ascii_digit()) {
-            return Err(BjtError::ValidationError(
-                "密码必须包含至少一个数字".to_string(),
-            ));
+        if password.chars().any(|c| c.is_ascii_digit()) {
+            score += 1;
+        } else {
+            feedback.push("建议包含数字");
         }
 
-        // 检查是否包含字母
-        if !password.chars().any(|c| c.is_ascii_alphabetic()) {
-            return Err(BjtError::ValidationError(
-                "密码必须包含至少一个字母".to_string(),
-            ));
+        if password.chars().any(|c| c.is_ascii_lowercase()) {
+            score += 1;
+        } else {
+            feedback.push("建议包含小写字母");
+        }
+
+        if password.chars().any(|c| c.is_ascii_uppercase()) {
+            score += 1;
+        } else {
+            feedback.push("建议包含大写字母");
+        }
+
+        if password.chars().any(|c| !c.is_alphanumeric()) {
+            score += 1;
+        } else {
+            feedback.push("建议包含特殊符号");
+        }
+
+        if score < 3 {
+            return Err(BjtError::ValidationError(format!(
+                "密码太弱 (强度: {}/5)。{}",
+                score,
+                feedback.join("，")
+            )));
+        }
+
+        if !feedback.is_empty() {
+            println!("💡 密码强度提醒 ({} / 5): {}", score, feedback.join("，"));
+        } else {
+            println!("✅ 密码强度极佳 (5 / 5)");
         }
 
         Ok(())

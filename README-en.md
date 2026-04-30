@@ -147,7 +147,13 @@ leolock completions zsh -o ~/.zsh/completions/
 
 ## 📝 Version History
 
-### Version 1.1.0 (Current)
+### Version 1.2.0 (Current)
+- **Multithreading Acceleration**: Introduced parallel processing with `rayon` for directory recursion, significantly boosting batch encryption efficiency.
+- **Enhanced Experience**: Integrated elegant progress bars (`indicatif`) and real-time password strength evaluation for a better interactive experience.
+- **Metadata Padding**: Added metadata padding to eliminate potential privacy risks from filename length leakage.
+- **Advanced Password Policies**: Added support for flexible password loading from environment variables (`--env-pass`), system keyring (`--keyring`), or standard input (`--stdin`).
+
+### Version 1.1.0
 - **Performance Breakthrough**: Refactored with streaming encryption, significantly boosting speed (14s/3GB).
 - **Memory Security**: Integrated `zeroize` to ensure no sensitive data remains in memory.
 - **Integrity Boost**: Upgraded to V3 file format with AAD (Additional Authenticated Data) for header protection.
