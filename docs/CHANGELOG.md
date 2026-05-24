@@ -1,6 +1,16 @@
 ## 📝 版本历史
 
-### 版本 1.3.0 (当前)
+### 版本 1.4.0 (当前)
+- **流式加解密端点**: `encrypt-stream` / `decrypt-stream`，接收原始二进制 body，无 MIME 解析开销。
+- **文件管理 API**: 列出/查看/下载/删除加密文件，支持分页和排序。
+- **API Key 轮换**: `POST /api/v1/auth/rotate-api-key`，密码验证后即时更换 Key，无需重启服务。
+- **解锁速率限制**: 每 IP 每分钟最多 5 次尝试，超限返回 429。
+- **请求日志中间件**: 记录方法/路径/状态码/耗时，不含敏感数据。
+- **错误响应脱敏**: 内部错误只返回通用消息，详情输出至 stderr。
+- **Config 结构重组**: 拆分为 `[program]/[core]/[auth]/[server]` 四个 TOML 段，旧格式自动迁移。
+- **服务端口可配**: 监听地址和端口写入 `[server]` 段，无需修改代码。
+
+### 版本 1.3.0
 - **HTTP API 服务**: 新增 `leolock-server` 子 crate，提供 REST API。
 - **Lock/Unlock 安全模式**: 密钥仅驻留内存，服务重启自动锁定，手动 lock 立即 zeroize 擦除。
 - **JWT 鉴权**: API Key (Argon2id 哈希存储) → 短期 JWT Token (30 分钟)。

@@ -450,7 +450,8 @@ curl -s -X POST http://127.0.0.1:3000/api/v1/lock \
 | 404 | 未找到 | 路由不存在（检查 URL 拼写） |
 | 412 | 前置条件不满足 | 服务未初始化就调用 unlock |
 | 423 | 已锁定 | 服务 locked 状态下调用 encrypt/decrypt/download/delete |
-| 500 | 服务内部错误 | JWT 未配置、IO 异常 |
+| 429 | 请求过多 | unlock 端点速率限制（每 IP 5次/分钟） |
+| 500 | 服务内部错误 | 内部异常（详情输出到 stderr，客户端只看到通用消息） |
 
 ## 安全说明
 

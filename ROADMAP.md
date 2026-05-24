@@ -48,6 +48,7 @@ LeoLock 致力于成为 Linux/Unix 环境下最安全、最易用、且高性能
 | POST | `/api/v1/lock` | 锁定（擦除内存密钥） |
 | POST | `/api/v1/encrypt` | multipart 上传 → 加密 → 返回 .leo |
 | POST | `/api/v1/decrypt` | multipart 上传 → 解密 → 返回原文 |
+| POST | `/api/v1/auth/rotate-api-key` | 轮换 API Key（密码验证，旧 Key 即时失效） |
 | GET | `/api/v1/files` | 列出加密文件（分页/排序） |
 | GET | `/api/v1/files/get` | 单个文件详情 |
 | GET | `/api/v1/files/download` | 原地解密下载 |
