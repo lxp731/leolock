@@ -130,7 +130,13 @@ impl KeyManager {
             .map_err(|e| BjtError::CryptoError(format!("生成随机盐值失败: {}", e)))?;
 
         // 从密码派生加密密钥
-        let encryption_key = CryptoManager::derive_key_from_password(password, &salt)?;
+        let encryption_key = CryptoManager::derive_key_from_password(
+            password,
+            &salt,
+            crate::crypto::DEFAULT_ARGON2_M,
+            crate::crypto::DEFAULT_ARGON2_T,
+            crate::crypto::DEFAULT_ARGON2_P,
+        )?;
         let encryption_key_zeroizing = Zeroizing::new(encryption_key);
 
         // 加密密钥数据
@@ -180,7 +186,13 @@ impl KeyManager {
         }
 
         // 从密码派生加密密钥
-        let encryption_key = CryptoManager::derive_key_from_password(password, &backup_data.salt)?;
+        let encryption_key = CryptoManager::derive_key_from_password(
+            password,
+            &backup_data.salt,
+            crate::crypto::DEFAULT_ARGON2_M,
+            crate::crypto::DEFAULT_ARGON2_T,
+            crate::crypto::DEFAULT_ARGON2_P,
+        )?;
         let encryption_key_zeroizing = Zeroizing::new(encryption_key);
 
         // 解密密钥数据

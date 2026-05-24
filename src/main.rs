@@ -121,6 +121,10 @@ enum Commands {
         /// 按文件大小排序 (asc=升序, desc=降序)
         #[arg(long, value_enum)]
         sort_by_size: Option<SortOrder>,
+
+        /// 输出格式
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        format: OutputFormat,
     },
 
     /// 生成shell补全脚本
@@ -160,10 +164,12 @@ fn main() -> Result<()> {
             path,
             show_original,
             sort_by_size,
+            format,
         }) => Ok(handle_list(
             path,
             *show_original,
             sort_by_size.clone(),
+            format.clone(),
             &cli,
         )?),
         Some(Commands::Completions { shell, output_dir }) => handle_completions(*shell, output_dir),
@@ -239,7 +245,13 @@ fn handle_init(save_to_keyring: bool) -> Result<()> {
     let salt_base64 = base64::engine::general_purpose::STANDARD.encode(salt);
 
     // 使用密码派生主密钥
-    let key = crate::crypto::CryptoManager::derive_key_from_password(&password, &salt)?;
+    let key = crate::crypto::CryptoManager::derive_key_from_password(
+        &password,
+        &salt,
+        config.core.argon2_m_cost,
+        config.core.argon2_t_cost,
+        config.core.argon2_p_cost,
+    )?;
     let key_zeroizing = zeroize::Zeroizing::new(key);
 
     // 保存密钥和盐值
@@ -344,7 +356,13 @@ fn get_key_from_password(cli: &Cli) -> Result<[u8; 32]> {
         .map_err(|e| BjtError::PasswordError(format!("解码盐值失败: {}", e)))?;
 
     // 使用密码派生密钥
-    let key = crate::crypto::CryptoManager::derive_key_from_password(&password, &salt)?;
+    let key = crate::crypto::CryptoManager::derive_key_from_password(
+        &password,
+        &salt,
+        config.core.argon2_m_cost,
+        config.core.argon2_t_cost,
+        config.core.argon2_p_cost,
+    )?;
     Ok(key)
 }
 
@@ -497,6 +515,7 @@ fn handle_list(
     path: &std::path::Path,
     show_original: bool,
     sort_by_size: Option<SortOrder>,
+    format: OutputFormat,
     cli: &Cli,
 ) -> Result<()> {
     println!("📁 扫描目录: {}", path.display());
@@ -583,57 +602,79 @@ fn handle_list(
         }
     }
 
-    // 显示文件信息
-    for file_info in &file_infos {
-        let path_str = file_info.path.display();
-        let version_str = format!("v{}", file_info.version);
-
-        // 基本信息
-        let mut info_line = format!("📄 {} [{}]", path_str, version_str);
-
-        // 添加文件大小
-        let size_str = if file_info.encrypted_size == 0 {
-            "空文件".to_string()
-        } else if file_info.encrypted_size < 1024 {
-            format!("{} B", file_info.encrypted_size)
-        } else if file_info.encrypted_size < 1024 * 1024 {
-            format!("{:.1} KB", file_info.encrypted_size as f64 / 1024.0)
-        } else if file_info.encrypted_size < 1024 * 1024 * 1024 {
-            format!(
-                "{:.1} MB",
-                file_info.encrypted_size as f64 / (1024.0 * 1024.0)
-            )
-        } else {
-            format!(
-                "{:.1} GB",
-                file_info.encrypted_size as f64 / (1024.0 * 1024.0 * 1024.0)
-            )
-        };
-        info_line.push_str(&format!(" ({})", size_str));
-
-        // 添加解密状态
-        let decrypt_status = if file_info.decryptable {
-            "🔓"
-        } else {
-            "🔒"
-        };
-        info_line.push_str(&format!(" {}", decrypt_status));
-
-        println!("{}", info_line);
-
-        // 显示原文件名（如果要求且可解密）
-        if show_original {
-            if let Some(original_name) = &file_info.original_filename {
-                println!("  原文件名: {}", original_name);
+    // 按选定格式输出
+    match format {
+        OutputFormat::Json => {
+            let json_output = file_infos
+                .iter()
+                .map(|f| {
+                    serde_json::json!({
+                        "path": f.path.to_string_lossy(),
+                        "version": f.version,
+                        "encrypted_size": f.encrypted_size,
+                        "decryptable": f.decryptable,
+                        "original_filename": f.original_filename,
+                    })
+                })
+                .collect::<Vec<_>>();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json_output).unwrap_or_default()
+            );
+        }
+        OutputFormat::Simple => {
+            for f in &file_infos {
+                let path_display = f.path.to_string_lossy();
+                let name = f.original_filename.as_deref().unwrap_or(&path_display);
+                println!("{}  {}B  v{}", name, f.encrypted_size, f.version);
+            }
+        }
+        OutputFormat::Table => {
+            for file_info in &file_infos {
+                let path_str = file_info.path.display();
+                let version_str = format!("v{}", file_info.version);
+                let size_str = if file_info.encrypted_size == 0 {
+                    "空文件".to_string()
+                } else if file_info.encrypted_size < 1024 {
+                    format!("{} B", file_info.encrypted_size)
+                } else if file_info.encrypted_size < 1024 * 1024 {
+                    format!("{:.1} KB", file_info.encrypted_size as f64 / 1024.0)
+                } else if file_info.encrypted_size < 1024 * 1024 * 1024 {
+                    format!(
+                        "{:.1} MB",
+                        file_info.encrypted_size as f64 / (1024.0 * 1024.0)
+                    )
+                } else {
+                    format!(
+                        "{:.1} GB",
+                        file_info.encrypted_size as f64 / (1024.0 * 1024.0 * 1024.0)
+                    )
+                };
+                let decrypt_status = if file_info.decryptable {
+                    "🔓"
+                } else {
+                    "🔒"
+                };
+                println!(
+                    "📄 {} [{}] ({}) {}",
+                    path_str, version_str, size_str, decrypt_status
+                );
+                if show_original {
+                    if let Some(original_name) = &file_info.original_filename {
+                        println!("  原文件名: {}", original_name);
+                    }
+                }
             }
         }
     }
 
-    println!("{}", "=".repeat(60));
-    println!("📊 统计:");
-    println!("  总文件数: {}", total_files);
-    println!("  加密文件数: {}", encrypted_files);
-    println!("  普通文件数: {}", total_files - encrypted_files);
+    if !matches!(format, OutputFormat::Json) {
+        println!("{}", "=".repeat(60));
+        println!("📊 统计:");
+        println!("  总文件数: {}", total_files);
+        println!("  加密文件数: {}", encrypted_files);
+        println!("  普通文件数: {}", total_files - encrypted_files);
+    }
 
     Ok(())
 }

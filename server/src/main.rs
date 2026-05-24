@@ -27,6 +27,9 @@ async fn main() -> anyhow::Result<()> {
         config.core.salt.clone(),
         config.auth.api_key_hash.clone(),
         config.is_initialized(),
+        config.core.argon2_m_cost,
+        config.core.argon2_t_cost,
+        config.core.argon2_p_cost,
     ));
 
     let has_api_key = app_state.has_api_key();
@@ -48,6 +51,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/decrypt", post(routes::decrypt))
         .route("/api/v1/encrypt-stream", post(routes::encrypt_stream))
         .route("/api/v1/decrypt-stream", post(routes::decrypt_stream))
+        .route(
+            "/api/v1/config",
+            get(routes::get_config).put(routes::update_config),
+        )
         .route("/api/v1/files", get(routes::list_files))
         .route("/api/v1/files/get", get(routes::get_file))
         .route("/api/v1/files/download", get(routes::download_file))

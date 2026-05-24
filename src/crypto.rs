@@ -17,8 +17,13 @@ const NONCE_SIZE: usize = 12; // GCM nonce大小
 const CHUNK_SIZE: usize = 1024 * 1024; // 提升至 1MB 分块大小
 const IO_BUFFER_SIZE: usize = 2 * 1024 * 1024; // 2MB IO 缓存
 const MAGIC_BYTES: [u8; 4] = [0x4C, 0x45, 0x4F, 0x33];
-const FILE_VERSION: u8 = 3;
+const FILE_VERSION: u8 = 4;
 const TAG_SIZE: usize = 16; // GCM 认证标签大小
+
+/// 默认 Argon2id 参数
+pub const DEFAULT_ARGON2_M: u32 = 19456;
+pub const DEFAULT_ARGON2_T: u32 = 2;
+pub const DEFAULT_ARGON2_P: u32 = 1;
 
 /// 文件头部结构
 #[derive(Debug, Zeroize)]
@@ -29,6 +34,13 @@ pub struct FileHeader {
     filename_metadata_len: u32,
     #[zeroize(skip)]
     is_streaming: bool,
+    /// Argon2id 参数 (V4+)，用于解密时从文件头恢复参数
+    #[zeroize(skip)]
+    m_cost: u32,
+    #[zeroize(skip)]
+    t_cost: u32,
+    #[zeroize(skip)]
+    p_cost: u32,
 }
 
 /// 加密文件信息
@@ -52,16 +64,19 @@ pub struct FileInfo {
 }
 
 impl FileHeader {
-    pub fn new(filename_metadata_len: u32, is_streaming: bool) -> Self {
+    pub fn new(filename_metadata_len: u32, is_streaming: bool, m: u32, t: u32, p: u32) -> Self {
         Self {
             magic: MAGIC_BYTES,
             version: FILE_VERSION,
             filename_metadata_len,
             is_streaming,
+            m_cost: m,
+            t_cost: t,
+            p_cost: p,
         }
     }
 
-    /// 获取用于 AAD 的字节 (仅限 V3+)
+    /// 获取用于 AAD 的字节
     pub fn to_aad(&self) -> Vec<u8> {
         let mut aad = Vec::new();
         aad.extend_from_slice(&self.magic);
@@ -69,6 +84,11 @@ impl FileHeader {
         aad.extend_from_slice(&self.filename_metadata_len.to_le_bytes());
         if self.version >= 3 {
             aad.push(if self.is_streaming { 1 } else { 0 });
+        }
+        if self.version >= 4 {
+            aad.extend_from_slice(&self.m_cost.to_le_bytes());
+            aad.extend_from_slice(&self.t_cost.to_le_bytes());
+            aad.extend_from_slice(&self.p_cost.to_le_bytes());
         }
         aad
     }
@@ -81,14 +101,28 @@ impl FileHeader {
         if self.version >= 3 {
             buffer.push(if self.is_streaming { 1 } else { 0 });
         }
+        if self.version >= 4 {
+            buffer.extend_from_slice(&self.m_cost.to_le_bytes());
+            buffer.extend_from_slice(&self.t_cost.to_le_bytes());
+            buffer.extend_from_slice(&self.p_cost.to_le_bytes());
+        }
         Ok(())
+    }
+
+    /// Argon2id 参数（V4+ 从文件头读取，旧版返回默认值）
+    #[allow(dead_code)]
+    pub fn argon2_params(&self) -> (u32, u32, u32) {
+        if self.version >= 4 {
+            (self.m_cost, self.t_cost, self.p_cost)
+        } else {
+            (DEFAULT_ARGON2_M, DEFAULT_ARGON2_T, DEFAULT_ARGON2_P)
+        }
     }
 
     fn read(reader: &mut impl Read) -> Result<Self> {
         let mut magic = [0u8; 4];
         reader.read_exact(&mut magic)?;
 
-        // 支持 LEO2 (旧版) 和 LEO3 (新版)
         if magic != MAGIC_BYTES && magic != [0x4C, 0x45, 0x4F, 0x32] {
             return Err(BjtError::CryptoError(
                 "无效的文件格式或版本不支持".to_string(),
@@ -111,11 +145,30 @@ impl FileHeader {
             false
         };
 
+        let (m_cost, t_cost, p_cost) = if version >= 4 {
+            let mut m = [0u8; 4];
+            let mut t = [0u8; 4];
+            let mut p = [0u8; 4];
+            reader.read_exact(&mut m)?;
+            reader.read_exact(&mut t)?;
+            reader.read_exact(&mut p)?;
+            (
+                u32::from_le_bytes(m),
+                u32::from_le_bytes(t),
+                u32::from_le_bytes(p),
+            )
+        } else {
+            (DEFAULT_ARGON2_M, DEFAULT_ARGON2_T, DEFAULT_ARGON2_P)
+        };
+
         Ok(Self {
             magic,
             version,
             filename_metadata_len,
             is_streaming,
+            m_cost,
+            t_cost,
+            p_cost,
         })
     }
 }
@@ -406,7 +459,14 @@ impl CryptoManager {
             } else {
                 // 加密文件名：使用新版流式格式 (V3)
                 let encrypted_filename = Self::encrypt_filename(&original_filename, key)?;
-                let header = FileHeader::new(encrypted_filename.len() as u32, true);
+                let config = crate::config::Config::load().unwrap_or_default();
+                let header = FileHeader::new(
+                    encrypted_filename.len() as u32,
+                    true,
+                    config.core.argon2_m_cost,
+                    config.core.argon2_t_cost,
+                    config.core.argon2_p_cost,
+                );
                 let aad = header.to_aad();
 
                 let mut header_buf = Vec::new();
@@ -522,8 +582,8 @@ impl CryptoManager {
 
                 Ok(output_path)
             }
-            3 => {
-                // V3 版本：流式加密，AAD 保护
+            3 | 4 => {
+                // V3/V4 版本：流式加密，AAD 保护（V4 额外存储 Argon2 参数）
                 let header = FileHeader::read(&mut input_file)?;
                 let aad = header.to_aad();
 
@@ -620,7 +680,14 @@ impl CryptoManager {
         key: &[u8; KEY_SIZE],
     ) -> Result<Vec<u8>> {
         let encrypted_filename = Self::encrypt_filename(original_filename, key)?;
-        let header = FileHeader::new(encrypted_filename.len() as u32, true);
+        let config = crate::config::Config::load().unwrap_or_default();
+        let header = FileHeader::new(
+            encrypted_filename.len() as u32,
+            true,
+            config.core.argon2_m_cost,
+            config.core.argon2_t_cost,
+            config.core.argon2_p_cost,
+        );
         let aad = header.to_aad();
 
         let mut output = Vec::with_capacity(data.len() + 256);
@@ -661,7 +728,13 @@ impl CryptoManager {
 
     /// 使用密码派生密钥（用于备份加密）
     #[allow(dead_code)]
-    pub fn derive_key_from_password(password: &str, salt: &[u8]) -> Result<[u8; KEY_SIZE]> {
+    pub fn derive_key_from_password(
+        password: &str,
+        salt: &[u8],
+        m_cost: u32,
+        t_cost: u32,
+        p_cost: u32,
+    ) -> Result<[u8; KEY_SIZE]> {
         use argon2::{Algorithm, Argon2, Params, Version};
 
         let mut key = [0u8; KEY_SIZE];
@@ -669,7 +742,7 @@ impl CryptoManager {
         let argon2 = Argon2::new(
             Algorithm::Argon2id,
             Version::V0x13,
-            Params::new(19456, 2, 1, Some(KEY_SIZE))
+            Params::new(m_cost, t_cost, p_cost, Some(KEY_SIZE))
                 .map_err(|e| BjtError::CryptoError(format!("创建Argon2参数失败: {}", e)))?,
         );
 
@@ -731,8 +804,8 @@ impl CryptoManager {
                     original_filename = Some(filename.to_string());
                 }
             }
-            2 | 3 => {
-                // V2 和 V3 版本：读取并尝试解密文件名
+            2 | 3 | 4 => {
+                // V2/V3/V4 版本：读取并尝试解密文件名
                 let mut file = fs::File::open(file_path)?;
                 let header = FileHeader::read(&mut file)?;
 

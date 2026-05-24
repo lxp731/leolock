@@ -58,12 +58,39 @@ pub struct CoreConfig {
     /// None = 未初始化
     #[serde(default)]
     pub salt: Option<String>,
+
+    /// Argon2id 内存成本 (KB)
+    #[serde(default = "default_argon2_m")]
+    pub argon2_m_cost: u32,
+
+    /// Argon2id 迭代次数
+    #[serde(default = "default_argon2_t")]
+    pub argon2_t_cost: u32,
+
+    /// Argon2id 并行度
+    #[serde(default = "default_argon2_p")]
+    pub argon2_p_cost: u32,
 }
 
 impl Default for CoreConfig {
     fn default() -> Self {
-        Self { salt: None }
+        Self {
+            salt: None,
+            argon2_m_cost: default_argon2_m(),
+            argon2_t_cost: default_argon2_t(),
+            argon2_p_cost: default_argon2_p(),
+        }
     }
+}
+
+fn default_argon2_m() -> u32 {
+    19456
+}
+fn default_argon2_t() -> u32 {
+    2
+}
+fn default_argon2_p() -> u32 {
+    1
 }
 
 // ─── API 鉴权 ─────────────────────────────────────────────────
@@ -159,6 +186,12 @@ struct FlatConfig {
     #[serde(default)]
     salt: Option<String>,
     #[serde(default)]
+    argon2_m_cost: Option<u32>,
+    #[serde(default)]
+    argon2_t_cost: Option<u32>,
+    #[serde(default)]
+    argon2_p_cost: Option<u32>,
+    #[serde(default)]
     api_key_hash: Option<String>,
     #[serde(default)]
     jwt_secret: Option<String>,
@@ -183,7 +216,12 @@ impl From<FlatConfig> for Config {
                 show_progress: f.show_progress.unwrap_or(program.show_progress),
                 file_format_version: f.file_format_version.unwrap_or(program.file_format_version),
             },
-            core: CoreConfig { salt: f.salt },
+            core: CoreConfig {
+                salt: f.salt,
+                argon2_m_cost: f.argon2_m_cost.unwrap_or_else(default_argon2_m),
+                argon2_t_cost: f.argon2_t_cost.unwrap_or_else(default_argon2_t),
+                argon2_p_cost: f.argon2_p_cost.unwrap_or_else(default_argon2_p),
+            },
             auth: AuthConfig {
                 api_key_hash: f.api_key_hash,
                 jwt_secret: f.jwt_secret,

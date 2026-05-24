@@ -199,8 +199,14 @@ pub async fn rotate_api_key(
         .decode(salt_b64)
         .map_err(|e| AppError::BadRequest(format!("盐值解码失败: {}", e)))?;
 
-    CryptoManager::derive_key_from_password(&password, &salt)
-        .map_err(|e| AppError::CryptoError(format!("密码错误: {}", e)))?;
+    CryptoManager::derive_key_from_password(
+        &password,
+        &salt,
+        state.argon2_m,
+        state.argon2_t,
+        state.argon2_p,
+    )
+    .map_err(|e| AppError::CryptoError(format!("密码错误: {}", e)))?;
 
     // 生成新 API Key
     let mut config = leolock::config::Config::load().unwrap_or_default();
@@ -293,8 +299,14 @@ pub async fn unlock(
         .decode(salt_b64)
         .map_err(|e| AppError::BadRequest(format!("盐值解码失败: {}", e)))?;
 
-    let key = CryptoManager::derive_key_from_password(&password, &salt)
-        .map_err(|e| AppError::CryptoError(format!("密钥派生失败: {}", e)))?;
+    let key = CryptoManager::derive_key_from_password(
+        &password,
+        &salt,
+        state.argon2_m,
+        state.argon2_t,
+        state.argon2_p,
+    )
+    .map_err(|e| AppError::CryptoError(format!("密钥派生失败: {}", e)))?;
 
     state.unlock(key);
 
@@ -340,8 +352,14 @@ pub async fn init(
     let salt_b64 = base64::engine::general_purpose::STANDARD.encode(salt);
 
     // 派生主密钥
-    let key = CryptoManager::derive_key_from_password(&password, &salt)
-        .map_err(|e| AppError::CryptoError(format!("密钥派生失败: {}", e)))?;
+    let key = CryptoManager::derive_key_from_password(
+        &password,
+        &salt,
+        state.argon2_m,
+        state.argon2_t,
+        state.argon2_p,
+    )
+    .map_err(|e| AppError::CryptoError(format!("密钥派生失败: {}", e)))?;
 
     // 保存密钥
     leolock::keymgmt::KeyManager::save_key(&key)?;
@@ -705,4 +723,158 @@ pub async fn decrypt_stream(
         )
         .body(Body::from(decrypted))
         .unwrap())
+}
+
+// ─── 配置读写 ─────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct ConfigResponse {
+    program: ProgramConfigView,
+    core: CoreConfigView,
+    auth: AuthConfigView,
+    server: ServerConfigView,
+}
+
+#[derive(Serialize)]
+struct ProgramConfigView {
+    forbidden_paths: Vec<String>,
+    max_file_size: u64,
+    default_extension: String,
+    key_file_path: String,
+    preserve_original_filename: bool,
+    show_progress: bool,
+    file_format_version: u8,
+}
+
+#[derive(Serialize)]
+struct CoreConfigView {
+    salt: String,
+    argon2_m_cost: u32,
+    argon2_t_cost: u32,
+    argon2_p_cost: u32,
+}
+
+#[derive(Serialize)]
+struct AuthConfigView {
+    api_key_hash: String,
+    jwt_secret: String,
+}
+
+#[derive(Serialize)]
+struct ServerConfigView {
+    bind_address: String,
+    port: u16,
+}
+
+#[derive(Deserialize)]
+pub struct ConfigUpdateRequest {
+    pub program: Option<ProgramUpdate>,
+    pub server: Option<ServerUpdate>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ProgramUpdate {
+    pub(crate) forbidden_paths: Option<Vec<String>>,
+    pub(crate) max_file_size: Option<u64>,
+    pub(crate) default_extension: Option<String>,
+    pub(crate) key_file_path: Option<String>,
+    pub(crate) preserve_original_filename: Option<bool>,
+    pub(crate) show_progress: Option<bool>,
+    pub(crate) file_format_version: Option<u8>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ServerUpdate {
+    pub(crate) bind_address: Option<String>,
+    pub(crate) port: Option<u16>,
+}
+
+/// GET /api/v1/config
+/// 返回当前配置，敏感字段脱敏
+pub async fn get_config() -> Result<Json<ConfigResponse>, AppError> {
+    let config = leolock::config::Config::load().unwrap_or_default();
+
+    let mask = |v: &Option<String>| {
+        if v.is_some() {
+            "***".to_string()
+        } else {
+            "未配置".to_string()
+        }
+    };
+
+    Ok(Json(ConfigResponse {
+        program: ProgramConfigView {
+            forbidden_paths: config.program.forbidden_paths,
+            max_file_size: config.program.max_file_size,
+            default_extension: config.program.default_extension,
+            key_file_path: config.program.key_file_path,
+            preserve_original_filename: config.program.preserve_original_filename,
+            show_progress: config.program.show_progress,
+            file_format_version: config.program.file_format_version,
+        },
+        core: CoreConfigView {
+            salt: mask(&config.core.salt),
+            argon2_m_cost: config.core.argon2_m_cost,
+            argon2_t_cost: config.core.argon2_t_cost,
+            argon2_p_cost: config.core.argon2_p_cost,
+        },
+        auth: AuthConfigView {
+            api_key_hash: mask(&config.auth.api_key_hash),
+            jwt_secret: mask(&config.auth.jwt_secret),
+        },
+        server: ServerConfigView {
+            bind_address: config.server.bind_address,
+            port: config.server.port,
+        },
+    }))
+}
+
+/// PUT /api/v1/config
+/// 更新 [program] 和 [server] 段，不允许修改 [core] 和 [auth]
+pub async fn update_config(
+    Json(body): Json<ConfigUpdateRequest>,
+) -> Result<Json<MessageResponse>, AppError> {
+    let mut config = leolock::config::Config::load().unwrap_or_default();
+
+    if let Some(p) = body.program {
+        if let Some(v) = p.forbidden_paths {
+            config.program.forbidden_paths = v;
+        }
+        if let Some(v) = p.max_file_size {
+            config.program.max_file_size = v;
+        }
+        if let Some(v) = p.default_extension {
+            config.program.default_extension = v;
+        }
+        if let Some(v) = p.key_file_path {
+            config.program.key_file_path = v;
+        }
+        if let Some(v) = p.preserve_original_filename {
+            config.program.preserve_original_filename = v;
+        }
+        if let Some(v) = p.show_progress {
+            config.program.show_progress = v;
+        }
+        if let Some(v) = p.file_format_version {
+            config.program.file_format_version = v;
+        }
+    }
+
+    if let Some(s) = body.server {
+        if let Some(v) = s.bind_address {
+            config.server.bind_address = v;
+        }
+        if let Some(v) = s.port {
+            config.server.port = v;
+        }
+    }
+
+    config
+        .save()
+        .map_err(|e| AppError::Internal(format!("保存配置失败: {}", e)))?;
+
+    Ok(Json(MessageResponse {
+        status: "updated".into(),
+        message: "✅ 配置已更新（部分修改需重启服务生效）".into(),
+    }))
 }

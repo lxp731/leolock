@@ -74,11 +74,11 @@ LeoLock 致力于成为 Linux/Unix 环境下最安全、最易用、且高性能
 
 ---
 
-## 阶段 4: 配置灵活化 (v1.5.0)
+## 阶段 4: 配置灵活化 (v1.5.0) — ✅
 
-- [ ] **动态 Argon2id 参数**: 允许用户在 `config.toml` 自定义内存/迭代参数，参数随文件头存储确保向后兼容
-- [ ] **多格式 list 输出**: `leolock list --format json|csv`，API 直接返回结构化 JSON
-- [ ] `GET /api/v1/config` / `PUT /api/v1/config` — 通过 API 读写配置
+- [x] **动态 Argon2id 参数**: `config.toml` [core] 段自定义 m/t/p，V4 文件头存储参数确保向后兼容
+- [x] **多格式 list 输出**: `leolock list --format json|simple|table`
+- [x] `GET /api/v1/config` / `PUT /api/v1/config` — 通过 API 读写配置（敏感字段脱敏）
 
 ---
 
