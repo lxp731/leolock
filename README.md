@@ -171,7 +171,7 @@ leolock completions zsh -o ~/.zsh/completions/
 
 ## 📝 版本历史
 
-### 版本 1.4.0 (当前)
+### 版本 1.5.0 (当前)
 - **HTTP API 服务**: 新增 `leolock-server`，提供 REST API 远程加解密。
 - **Lock/Unlock 模式**: 密钥仅驻留内存，重启自动锁定，用完即擦。
 - **JWT 鉴权**: API Key → 短期 Token，Argon2id 哈希存储。
@@ -214,6 +214,6 @@ MIT License - 详见 [LICENSE](LICENSE)
 ---
 
 **最后更新:** 2026-05-24  
-**项目状态:** ✅ CLI v1.4.0 + API 服务，稳定可用
+**项目状态:** ✅ CLI v1.5.0 + API 服务，稳定可用
 
 **安全提示:** 请定期备份重要数据，加密不是数据丢失的保险措施。

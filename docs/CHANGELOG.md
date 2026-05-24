@@ -1,6 +1,12 @@
 ## 📝 版本历史
 
-### 版本 1.4.0 (当前)
+### 版本 1.5.0 (当前)
+- **动态 Argon2id 参数**: `[core]` 段可自定义 m_cost/t_cost/p_cost，V4 文件头存储参数。
+- **V4 文件格式**: 文件头追加 12 字节 Argon2id 参数，AAD 同步保护。V1-V3 文件自动使用默认参数。
+- **多格式 list 输出**: `leolock list --format json|simple|table` 三种格式。
+- **Config API**: `GET /api/v1/config` 查看配置（敏感字段脱敏），`PUT /api/v1/config` 更新。
+
+### 版本 1.4.0
 - **流式加解密端点**: `encrypt-stream` / `decrypt-stream`，接收原始二进制 body，无 MIME 解析开销。
 - **文件管理 API**: 列出/查看/下载/删除加密文件，支持分页和排序。
 - **API Key 轮换**: `POST /api/v1/auth/rotate-api-key`，密码验证后即时更换 Key，无需重启服务。
