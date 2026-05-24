@@ -64,12 +64,12 @@ LeoLock 致力于成为 Linux/Unix 环境下最安全、最易用、且高性能
 - [x] `POST /api/v1/encrypt-stream` — 原始二进制 body + X-Filename 头
 - [x] `POST /api/v1/decrypt-stream` — 原始二进制 V3 body 解密
 
-### 安全加固
+### 安全加固 — ✅
 
-- [ ] 请求日志中间件（不含密码/密钥/文件名等敏感字段）
-- [ ] unlock 端点速率限制（防暴力穷举密码）
-- [ ] 错误响应脱敏（不泄露内部路径/栈信息）
-- [ ] TLS 支持（远程访问场景）
+- [x] unlock 端点速率限制（每 IP 每分钟 5 次，429 响应）
+- [x] 请求日志中间件（方法/路径/状态/耗时，不含敏感数据）
+- [x] 错误响应脱敏（AppError::Internal 返回通用消息，详情输出到 stderr）
+- [ ] TLS 支持（远程访问场景，通过反向代理配置）
 
 ---
 

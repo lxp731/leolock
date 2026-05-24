@@ -21,6 +21,31 @@ struct Claims {
     exp: usize,
 }
 
+/// 请求日志中间件（不含敏感数据）
+///
+/// 记录方法、路径、状态码、耗时（毫秒）。
+/// 不记录 Authorization header 和请求体。
+pub async fn logging_middleware(req: Request, next: Next) -> Response {
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+    let start = std::time::Instant::now();
+
+    let response = next.run(req).await;
+
+    let status = response.status();
+    let elapsed_ms = start.elapsed().as_millis();
+
+    println!(
+        "{} {} → {} ({}ms)",
+        method,
+        path,
+        status.as_u16(),
+        elapsed_ms
+    );
+
+    response
+}
+
 /// JWT 验证中间件
 ///
 /// 从请求的 Authorization header 中提取并验证 JWT Token。

@@ -1,12 +1,13 @@
 use axum::{
     body::Body,
-    extract::{Multipart, Query, State},
+    extract::{ConnectInfo, Multipart, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
 use http_body_util::BodyExt;
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use zeroize::Zeroizing;
@@ -82,6 +83,7 @@ pub enum AppError {
     NotInitialized,
     BadRequest(String),
     CryptoError(String),
+    RateLimited,
     Internal(String),
 }
 
@@ -110,7 +112,14 @@ impl IntoResponse for AppError {
             ),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::CryptoError(msg) => (StatusCode::BAD_REQUEST, format!("加密错误: {}", msg)),
-            AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            AppError::RateLimited => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "⏳ 请求过于频繁，请 1 分钟后再试".into(),
+            ),
+            AppError::Internal(msg) => {
+                eprintln!("[ERROR] {}", msg);
+                (StatusCode::INTERNAL_SERVER_ERROR, "内部服务器错误".into())
+            }
         };
         (
             status,
@@ -261,8 +270,13 @@ pub async fn status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> 
 
 pub async fn unlock(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<UnlockRequest>,
 ) -> Result<Json<MessageResponse>, AppError> {
+    if !state.check_unlock_rate(addr.ip()).await {
+        return Err(AppError::RateLimited);
+    }
+
     let password = body.into_password();
 
     if !state.is_initialized {

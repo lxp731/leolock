@@ -8,6 +8,7 @@ use axum::{
     Router,
 };
 use leolock::config::Config;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tower::limit::ConcurrencyLimitLayer;
 use tower_http::cors::CorsLayer;
@@ -59,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .merge(public)
         .merge(protected)
+        .layer(axum_mw::from_fn(middleware::logging_middleware))
         .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT))
         .layer(RequestBodyLimitLayer::new(MAX_REQUEST_BYTES))
         .layer(CorsLayer::permissive())
@@ -75,7 +77,11 @@ async fn main() -> anyhow::Result<()> {
     println!();
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
