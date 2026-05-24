@@ -1,11 +1,22 @@
-[package]
-name = "leolock"
-version = "1.1.2"
+[workspace]
+members = [".", "server"]
+resolver = "2"
+
+[workspace.package]
+version = "1.3.0"
 edition = "2021"
-description = "LeoLock - 安全的文件加密解密工具"
-authors = ["Burgess Leo <burgess@example.com>"]
+authors = ["Burgess Leo <liuxiaopeng731@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/burgessleo/leolock"
+
+[package]
+name = "leolock"
+version.workspace = true
+edition.workspace = true
+description = "LeoLock - 安全的文件加密解密工具"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [package.metadata.deb]
 maintainer = "Burgess Leo liuxiaopeng731@gmail.com"
@@ -61,7 +72,6 @@ lto = true
 codegen-units = 1
 opt-level = 3
 
-# The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
 lto = "thin"

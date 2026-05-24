@@ -37,6 +37,16 @@ pub struct Config {
     /// 盐值（base64编码，用于从密码派生密钥）
     /// None = 未初始化，Some = 已初始化
     pub salt: Option<String>,
+
+    // === API 鉴权 ===
+
+    /// API Key 的 Argon2id 哈希（用于 API 鉴权验证）
+    /// None = 未生成 API Key
+    pub api_key_hash: Option<String>,
+
+    /// JWT 签名密钥（256位随机数 base64 编码，用于签发和验证 Token）
+    /// None = 未生成
+    pub jwt_secret: Option<String>,
 }
 
 impl Default for Config {
@@ -63,8 +73,6 @@ impl Default for Config {
                 
                 // 特殊目录
                 "/root".to_string(),     // root用户家目录
-                "/var".to_string(),      // 系统变量文件
-                "/tmp".to_string(),      // 临时文件
             ],
             max_file_size: 10 * 1024 * 1024 * 1024, // 10GB
             default_extension: ".leo".to_string(),
@@ -73,6 +81,8 @@ impl Default for Config {
             show_progress: true,                // 默认显示进度条
             file_format_version: 2,             // 新文件格式版本
             salt: None,
+            api_key_hash: None,
+            jwt_secret: None,
         }
     }
 }
@@ -150,6 +160,8 @@ impl Config {
             show_progress: self.show_progress,
             file_format_version: self.file_format_version,
             salt: self.salt.clone(),
+            api_key_hash: self.api_key_hash.clone(),
+            jwt_secret: self.jwt_secret.clone(),
         };
         
         let content = toml::to_string_pretty(&safe_config).map_err(|e| {
@@ -175,6 +187,47 @@ impl Config {
     pub fn is_initialized(&self) -> bool {
         // 通过盐值存在性判断是否初始化
         self.salt.is_some()
+    }
+
+    /// 检查 API Key 是否已生成
+    #[allow(dead_code)]
+    pub fn has_api_key(&self) -> bool {
+        self.api_key_hash.is_some()
+    }
+
+    /// 生成 API Key（返回明文，哈希存入配置）
+    /// 调用者负责把明文展示给用户并立即保存配置
+    pub fn generate_api_key(&mut self) -> Result<String> {
+        use base64::Engine;
+        let mut raw = [0u8; 32];
+        getrandom::getrandom(&mut raw)
+            .map_err(|e| BjtError::CryptoError(format!("生成 API Key 失败: {}", e)))?;
+        let api_key = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
+
+        // 用 Argon2id 哈希存储
+        let hash = crate::password::PasswordManager::hash_api_key(&api_key)?;
+        self.api_key_hash = Some(hash);
+
+        Ok(api_key)
+    }
+
+    /// 生成 JWT 签名密钥（存 base64，256位随机数）
+    pub fn generate_jwt_secret(&mut self) -> Result<()> {
+        use base64::Engine;
+        let mut raw = [0u8; 32];
+        getrandom::getrandom(&mut raw)
+            .map_err(|e| BjtError::CryptoError(format!("生成 JWT 密钥失败: {}", e)))?;
+        self.jwt_secret = Some(base64::engine::general_purpose::STANDARD.encode(raw));
+        Ok(())
+    }
+
+    /// 验证 API Key（对比存储的哈希）
+    #[allow(dead_code)]
+    pub fn verify_api_key(&self, key: &str) -> bool {
+        match &self.api_key_hash {
+            Some(hash) => crate::password::PasswordManager::verify_api_key(key, hash),
+            None => false,
+        }
     }
     
     /// 获取配置目录路径
@@ -245,4 +298,6 @@ struct SafeConfig {
     pub show_progress: bool,
     pub file_format_version: u8,
     pub salt: Option<String>,
+    pub api_key_hash: Option<String>,
+    pub jwt_secret: Option<String>,
 }

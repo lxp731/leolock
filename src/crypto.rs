@@ -572,6 +572,7 @@ impl CryptoManager {
     }
 
     /// 加密文件（兼容接口）
+    #[allow(dead_code)]
     pub fn encrypt_file(
         input_path: &std::path::Path, 
         key: &[u8; KEY_SIZE], 
@@ -597,7 +598,47 @@ impl CryptoManager {
         Ok(())
     }
 
+    /// 内存中 V3 加密（无文件 I/O，供 API 使用）
+    #[allow(dead_code)]
+    pub fn encrypt_data_v3(
+        data: &[u8],
+        original_filename: &str,
+        key: &[u8; KEY_SIZE],
+    ) -> Result<Vec<u8>> {
+        let encrypted_filename = Self::encrypt_filename(original_filename, key)?;
+        let header = FileHeader::new(encrypted_filename.len() as u32, true);
+        let aad = header.to_aad();
+
+        let mut output = Vec::with_capacity(data.len() + 256);
+        header.write_to_buffer(&mut output)?;
+        output.extend_from_slice(&encrypted_filename);
+
+        let mut reader = std::io::Cursor::new(data);
+        Self::encrypt_stream(&mut reader, &mut output, key, &aad)?;
+        Ok(output)
+    }
+
+    /// 内存中 V3 解密（无文件 I/O，供 API 使用）
+    #[allow(dead_code)]
+    pub fn decrypt_data_v3(
+        data: &[u8],
+        key: &[u8; KEY_SIZE],
+    ) -> Result<(String, Vec<u8>)> {
+        let mut reader = std::io::Cursor::new(data);
+        let header = FileHeader::read(&mut reader)?;
+        let aad = header.to_aad();
+
+        let mut encrypted_filename = vec![0u8; header.filename_metadata_len as usize];
+        reader.read_exact(&mut encrypted_filename)?;
+        let original_filename = Self::decrypt_filename(&encrypted_filename, key)?;
+
+        let mut output = Vec::with_capacity(data.len());
+        Self::decrypt_stream(&mut reader, &mut output, key, &aad)?;
+        Ok((original_filename, output))
+    }
+
     /// 解密文件（兼容旧接口）
+    #[allow(dead_code)]
     pub fn decrypt_file(input_path: &std::path::Path, key: &[u8; KEY_SIZE], keep_original: bool) -> Result<()> {
         Self::decrypt_file_v2(input_path, key, keep_original)?;
         Ok(())

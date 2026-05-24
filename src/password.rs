@@ -44,6 +44,17 @@ impl PasswordManager {
             .is_ok())
     }
 
+    /// 哈希 API Key（用于存配置，用法和密码哈希一样）
+    pub fn hash_api_key(key: &str) -> Result<String> {
+        Self::hash_password(key)
+    }
+
+    /// 验证 API Key（对比哈希）
+    #[allow(dead_code)]
+    pub fn verify_api_key(key: &str, stored_hash: &str) -> bool {
+        Self::verify_password(key, stored_hash).unwrap_or(false)
+    }
+
     /// 交互式输入密码（无回显，且自动清理内存）
     pub fn read_password_interactive(prompt: &str) -> Result<Zeroizing<String>> {
         print!("{}: ", prompt);

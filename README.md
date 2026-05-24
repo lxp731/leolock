@@ -1,19 +1,18 @@
 # LeoLock 🔒
 
-一个安全的文件加密解密命令行工具，使用 AES-256-GCM 加密算法和 Argon2id 密码哈希。
+一个安全的文件加密解密工具，提供命令行和 HTTP API 两种使用方式，使用 AES-256-GCM 加密算法和 Argon2id 密码哈希。
 
 ## ✨ 特性
 
-- **军用级加密**: AES-256-GCM 认证加密，现已升级 **AAD (附加认证数据)** 保护，防止文件头被篡改。
+- **军用级加密**: AES-256-GCM 认证加密 + AAD 元数据保护，防止文件头篡改。
+- **HTTP API 服务**: 提供 REST API，支持远程加解密、文件管理、JWT 鉴权。
 - **安全密码哈希**: Argon2id 抗 GPU/ASIC 攻击。
-- **内存零残留**: 集成 `zeroize` 技术，确保密码和密钥在内存中使用后立即擦除，防止内存嗅探。
-- **极速大文件处理**: 采用流式 I/O 重构，3GB 文件加密仅需约 14 秒（实测环境），且内存占用极低。
-- **原子化操作**: “先写后换”机制，确保即使在加密中途崩溃或断电，原始数据也不会损坏。
-- **双重加密模式**: 支持文件名加密（完全模式）或仅加密内容（快速模式）。
-- **递归处理**: 支持文件和文件夹的批量加密。
+- **内存零残留**: `zeroize` 技术确保密码和密钥使用后立即擦除。API 服务重启自动锁定。
+- **极速大文件处理**: 流式 I/O，3GB 文件加密约 14 秒，API 端内存直通无磁盘中转。
+- **原子化操作**: “先写后换”机制，中途崩溃不损坏原始数据。
+- **双重加密模式**: 文件名加密（完全模式）或仅加密内容（快速模式）。
+- **递归处理**: 文件和文件夹批量加解密。
 - **备份恢复**: 初始化时自动创建加密密钥备份。
-- **Tab 补全**: 支持 Bash、Zsh、Fish、PowerShell、Elvish。
-- **运行时安全检查**: 自动检测配置文件权限（需 600 权限）。
 
 ## 🚀 快速开始
 
@@ -71,6 +70,8 @@ leolock list . --show-original
 
 ## 📖 基本命令
 
+### CLI
+
 | 命令 | 说明 |
 |------|------|
 | `leolock init` | 初始化工具 |
@@ -79,14 +80,36 @@ leolock list . --show-original
 | `leolock list <路径>` | 列出加密文件信息 |
 | `leolock recover --backup <文件>` | 从备份文件恢复密钥 |
 | `leolock completions <shell>` | 生成shell补全脚本 |
+| `leolock config gen-api-key` | 生成 API Key |
 
 **常用选项:**
-- `-k, --keep`: 保留源文件（不删除）
+- `-k, --keep`: 保留源文件
 - `-F, --fast`: 快速模式（不加密文件名）
 - `--show-original`: 显示原文件名（需要密码）
 - `--sort-by-size <asc/desc>`: 按文件大小排序
 
-**完整命令参考:** 详见 [docs/COMMANDS.md](docs/COMMANDS.md)
+### HTTP API
+
+```bash
+# 启动服务
+leolock-server
+
+# 登录
+curl -X POST http://127.0.0.1:3000/api/v1/auth/login \
+  -H 'Content-Type: application/json' -d '{"api_key": "..."}'
+
+# 加密
+curl -X POST http://127.0.0.1:3000/api/v1/encrypt \
+  -H "Authorization: Bearer $TOKEN" -F "file=@doc.pdf" -o doc.leo
+
+# 解密
+curl -X POST http://127.0.0.1:3000/api/v1/decrypt \
+  -H "Authorization: Bearer $TOKEN" -F "file=@doc.leo" -o doc.pdf
+```
+
+**完整 API 参考:** 详见 [docs/API.md](docs/API.md)
+
+**完整 CLI 命令参考:** 详见 [docs/COMMANDS.md](docs/COMMANDS.md)
 
 ## 📦 安装选项
 
@@ -130,6 +153,7 @@ leolock completions zsh -o ~/.zsh/completions/
 
 ## 📁 文档目录
 
+- [docs/API.md](docs/API.md) - HTTP API 完整参考
 - [docs/INSTALLATION.md](docs/INSTALLATION.md) - 详细安装指南
 - [docs/COMMANDS.md](docs/COMMANDS.md) - 完整命令参考
 - [docs/SECURITY.md](docs/SECURITY.md) - 安全特性文档
@@ -147,11 +171,18 @@ leolock completions zsh -o ~/.zsh/completions/
 
 ## 📝 版本历史
 
-### 版本 1.2.0 (当前)
-- **多线程加速**: 引入 `rayon` 库实现目录递归时的并行处理，大幅提升批量加密效率。
-- **体验升级**: 引入精美的进度条 (`indicatif`) 与密码强度实时评估功能，大幅提升交互体验。
-- **元数据对齐**: 新增元数据填充 (Padding)，消除文件名长度泄露的潜在隐私风险。
-- **高级密码策略**: 支持从环境变量 (`--env-pass`)、系统钥匙串 (`--keyring`) 或标准输入 (`--stdin`) 灵活加载密码。
+### 版本 1.3.0 (当前)
+- **HTTP API 服务**: 新增 `leolock-server`，提供 REST API 远程加解密。
+- **Lock/Unlock 模式**: 密钥仅驻留内存，重启自动锁定，用完即擦。
+- **JWT 鉴权**: API Key → 短期 Token，Argon2id 哈希存储。
+- **文件管理 API**: 列出/查看/下载/删除加密文件。
+- **内存直通**: API 加解密无磁盘中转，直接操作内存缓冲区。
+
+### 版本 1.2.0
+- **多线程加速**: 引入 `rayon` 实现目录递归并行处理。
+- **体验升级**: 进度条 (`indicatif`) + 密码强度实时评估。
+- **元数据填充**: 消除文件名长度泄露风险。
+- **高级密码策略**: 支持环境变量 / keyring / stdin 加载密码。
 
 ### 版本 1.1.0
 - **性能质跃**: 引入流式加密重构，大幅提升大文件处理速度（14s/3GB）。
@@ -182,7 +213,7 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 ---
 
-**最后更新:** 2026-04-30  
-**项目状态:** ✅ 安全加固，性能极致，稳定生产可用
+**最后更新:** 2026-05-24  
+**项目状态:** ✅ CLI v1.3.0 + API 服务，稳定可用
 
 **安全提示:** 请定期备份重要数据，加密不是数据丢失的保险措施。

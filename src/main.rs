@@ -16,6 +16,7 @@ use clap_complete::{generate, Shell};
 use base64::Engine;
 
 use std::path::{Path, PathBuf};
+use zeroize::Zeroizing;
 
 /// 排序顺序
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -70,6 +71,9 @@ enum ConfigCommands {
     
     /// 验证配置文件
     Validate,
+
+    /// 生成 API Key（用于 API 服务鉴权）
+    GenApiKey,
 }
 
 #[derive(Subcommand)]
@@ -174,6 +178,7 @@ fn main() -> Result<()> {
         Some(Commands::Config { subcommand }) => match subcommand {
             ConfigCommands::Show => handle_config_show(),
             ConfigCommands::Validate => handle_config_validate(),
+            ConfigCommands::GenApiKey => handle_gen_api_key(),
         },
         None => {
             let mut cmd = Cli::command();
@@ -248,15 +253,37 @@ fn handle_init(save_to_keyring: bool) -> Result<()> {
     
     // 保存盐值到配置（设置盐值即表示已初始化）
     config.salt = Some(salt_base64);
-    
+
+    // 生成 API Key 用于 API 服务鉴权
+    println!();
+    println!("🔑 生成 API Key（用于 API 服务鉴权）...");
+    let api_key = config.generate_api_key()?;
+    config.generate_jwt_secret()?;
+    println!("✅ API Key 已生成");
+
     println!();
     println!("📁 创建配置文件...");
-    
-    // 保存配置（包含盐值和初始化状态）
+
+    // 保存配置（包含盐值、API Key 哈希、JWT Secret 和初始化状态）
     config.save()?;
     let config_path = Config::config_file_path().unwrap_or_default();
     println!("✅ 已生成配置文件: {}", config_path.display());
-    
+
+    // ⚠️ 只有首次 init 才显示 API Key
+    println!();
+    println!("{}", "=".repeat(56));
+    println!("⚠️  重要：你的 API Key（仅显示一次，请立即保存！）");
+    println!("{}", "=".repeat(56));
+    println!();
+    println!("  {}", api_key);
+    println!();
+    println!("用这个 API Key 登录 API 服务：");
+    println!("  curl -X POST http://127.0.0.1:3000/api/v1/auth/login \\");
+    println!("    -H 'Content-Type: application/json' \\");
+    println!("    -d '{{\"api_key\": \"{}...\"}}'", &api_key[..8]);
+    println!();
+    println!("登录后会返回 Token，之后所有请求带上：");
+    println!("  -H 'Authorization: Bearer <token>'");
     println!();
     println!("你可以编辑此文件来自定义设置:");
     println!(" - 危险路径列表 (forbidden_paths)");
@@ -281,21 +308,25 @@ fn handle_init(save_to_keyring: bool) -> Result<()> {
     Ok(())
 }
 
-/// 验证密码并获取密钥
-fn get_key_from_password(cli: &Cli) -> Result<[u8; 32]> {
-    // 根据 CLI 参数选择密码来源
-    let password = if let Some(var_name) = &cli.env_pass {
+/// 根据 CLI 参数从对应来源读取密码
+fn read_password(cli: &Cli, prompt: &str) -> Result<Zeroizing<String>> {
+    if let Some(var_name) = &cli.env_pass {
         println!("🔑 从环境变量加载密码...");
-        PasswordManager::get_password_from_env(var_name)?
+        PasswordManager::get_password_from_env(var_name)
     } else if cli.keyring {
         println!("🔑 从系统钥匙串加载密码...");
-        PasswordManager::get_password_from_keyring()?
+        PasswordManager::get_password_from_keyring()
     } else if cli.stdin {
         println!("🔑 从标准输入加载密码...");
-        PasswordManager::get_password_from_stdin()?
+        PasswordManager::get_password_from_stdin()
     } else {
-        PasswordManager::read_password_interactive("请输入密码")?
-    };
+        PasswordManager::read_password_interactive(prompt)
+    }
+}
+
+/// 验证密码并获取密钥
+fn get_key_from_password(cli: &Cli) -> Result<[u8; 32]> {
+    let password = read_password(cli, "请输入密码")?;
     
     // 加载配置和盐值
     let config = Config::load().unwrap_or_default();
@@ -373,13 +404,13 @@ fn handle_decrypt(path: &std::path::Path, keep_encrypted: bool, cli: &Cli) -> Re
     }
     
     // 加载配置
-    let _config = Config::load().unwrap_or_default();
-    
+    let config = Config::load().unwrap_or_default();
+
     // 从密码获取密钥
     let key = get_key_from_password(cli)?;
-    
+
     // 执行解密
-    FileOps::decrypt_path(path, &key, keep_encrypted)?;
+    FileOps::decrypt_path_with_config(path, &key, keep_encrypted, &config)?;
     
     println!("✅ 解密完成！");
     Ok(())
@@ -662,18 +693,7 @@ fn handle_recover(backup_path: &Path, cli: &Cli) -> Result<()> {
     }
     
     // 读取密码
-    let password = if let Some(var_name) = &cli.env_pass {
-        println!("🔑 从环境变量加载备份密码...");
-        PasswordManager::get_password_from_env(var_name)?
-    } else if cli.keyring {
-        println!("🔑 从系统钥匙串加载备份密码...");
-        PasswordManager::get_password_from_keyring()?
-    } else if cli.stdin {
-        println!("🔑 从标准输入加载备份密码...");
-        PasswordManager::get_password_from_stdin()?
-    } else {
-        crate::password::PasswordManager::read_password_interactive("请输入备份密码")?
-    };
+    let password = read_password(cli, "请输入备份密码")?;
     
     // 从备份恢复密钥
     let key = crate::keymgmt::KeyManager::recover_from_backup(backup_path, &password)?;
@@ -685,6 +705,36 @@ fn handle_recover(backup_path: &Path, cli: &Cli) -> Result<()> {
     println!("  已从备份文件恢复密钥并保存到配置文件");
     println!("  现在可以使用新密钥进行加密/解密操作");
     
+    Ok(())
+}
+
+/// 生成 API Key（为已有配置补充 API 鉴权）
+fn handle_gen_api_key() -> Result<()> {
+    let mut config = Config::load()?;
+
+    if !config.is_initialized() {
+        return Err(BjtError::ConfigError("工具未初始化，请先运行 leolock init".into()));
+    }
+
+    println!("🔑 生成 API Key...");
+    let api_key = config.generate_api_key()?;
+    config.generate_jwt_secret()?;
+    config.save()?;
+
+    println!();
+    println!("{}", "=".repeat(56));
+    println!("⚠️  你的 API Key（仅显示一次，请立即保存！）");
+    println!("{}", "=".repeat(56));
+    println!();
+    println!("  {}", api_key);
+    println!();
+    println!("用这个 API Key 登录 API 服务：");
+    println!("  curl -X POST http://127.0.0.1:3000/api/v1/auth/login \\");
+    println!("    -H 'Content-Type: application/json' \\");
+    println!("    -d '{{\"api_key\": \"{}...\"}}'", &api_key[..8]);
+    println!();
+    println!("登录后会返回 Token，之后所有请求带上：");
+    println!("  -H 'Authorization: Bearer <token>'");
     Ok(())
 }
 
