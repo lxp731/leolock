@@ -74,6 +74,26 @@ enum ConfigCommands {
 
     /// 生成 API Key（用于 API 服务鉴权）
     GenApiKey,
+
+    /// 设置配置项（server.port=3300）
+    Set {
+        /// 配置键，支持 server.port / program.show_progress 等
+        key: String,
+        /// 配置值
+        value: String,
+    },
+
+    /// 添加禁止加密的路径
+    AddForbidden {
+        /// 要添加的路径
+        path: String,
+    },
+
+    /// 移除禁止加密的路径
+    RemoveForbidden {
+        /// 要移除的路径
+        path: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -178,6 +198,9 @@ fn main() -> Result<()> {
             ConfigCommands::Show => handle_config_show(),
             ConfigCommands::Validate => handle_config_validate(),
             ConfigCommands::GenApiKey => handle_gen_api_key(),
+            ConfigCommands::Set { key, value } => handle_config_set(key, value),
+            ConfigCommands::AddForbidden { path } => handle_config_add_forbidden(path),
+            ConfigCommands::RemoveForbidden { path } => handle_config_remove_forbidden(path),
         },
         None => {
             let mut cmd = Cli::command();
@@ -796,4 +819,115 @@ fn handle_gen_api_key() -> Result<()> {
     println!("登录后会返回 Token，之后所有请求带上：");
     println!("  -H 'Authorization: Bearer <token>'");
     Ok(())
+}
+
+/// 处理 config set 命令
+fn handle_config_set(key: &str, value: &str) -> Result<()> {
+    let mut config = Config::load()?;
+
+    match key {
+        "server.port" => {
+            config.server.port = value
+                .parse()
+                .map_err(|_| BjtError::ValidationError(format!("无效的端口号: {}", value)))?;
+        }
+        "server.bind_address" => config.server.bind_address = value.to_string(),
+        "program.max_file_size" => {
+            config.program.max_file_size = value
+                .parse()
+                .map_err(|_| BjtError::ValidationError(format!("无效的文件大小: {}", value)))?;
+        }
+        "program.default_extension" => config.program.default_extension = value.to_string(),
+        "program.key_file_path" => config.program.key_file_path = value.to_string(),
+        "program.preserve_original_filename" => {
+            config.program.preserve_original_filename = parse_bool(value)?;
+        }
+        "program.show_progress" => {
+            config.program.show_progress = parse_bool(value)?;
+        }
+        "program.file_format_version" => {
+            config.program.file_format_version = value
+                .parse()
+                .map_err(|_| BjtError::ValidationError(format!("无效的版本号: {}", value)))?;
+        }
+        "core.argon2_m_cost" => {
+            config.core.argon2_m_cost = value
+                .parse()
+                .map_err(|_| BjtError::ValidationError(format!("无效的数值: {}", value)))?;
+        }
+        "core.argon2_t_cost" => {
+            config.core.argon2_t_cost = value
+                .parse()
+                .map_err(|_| BjtError::ValidationError(format!("无效的数值: {}", value)))?;
+        }
+        "core.argon2_p_cost" => {
+            config.core.argon2_p_cost = value
+                .parse()
+                .map_err(|_| BjtError::ValidationError(format!("无效的数值: {}", value)))?;
+        }
+        _ => {
+            return Err(BjtError::ValidationError(format!(
+                "不支持的配置项: {}\n支持: server.port, server.bind_address, program.max_file_size, \
+                 program.default_extension, program.key_file_path, program.preserve_original_filename, \
+                 program.show_progress, program.file_format_version, core.argon2_m_cost, \
+                 core.argon2_t_cost, core.argon2_p_cost",
+                key
+            )));
+        }
+    }
+
+    config.save()?;
+    println!("✅ {} = {}", key, value);
+    Ok(())
+}
+
+/// 处理 config add-forbidden 命令
+fn handle_config_add_forbidden(path: &str) -> Result<()> {
+    let mut config = Config::load()?;
+    let normalized = shellexpand::full(path)
+        .map(|s| s.to_string())
+        .unwrap_or_else(|_| path.to_string());
+
+    if config.program.forbidden_paths.contains(&normalized) {
+        println!("⚠️  路径已在列表中: {}", normalized);
+        return Ok(());
+    }
+
+    config.program.forbidden_paths.push(normalized.clone());
+    config.save()?;
+    println!("✅ 已添加禁止路径: {}", normalized);
+    Ok(())
+}
+
+/// 处理 config remove-forbidden 命令
+fn handle_config_remove_forbidden(path: &str) -> Result<()> {
+    let mut config = Config::load()?;
+    let normalized = shellexpand::full(path)
+        .map(|s| s.to_string())
+        .unwrap_or_else(|_| path.to_string());
+
+    if let Some(pos) = config
+        .program
+        .forbidden_paths
+        .iter()
+        .position(|p| p == &normalized)
+    {
+        config.program.forbidden_paths.remove(pos);
+        config.save()?;
+        println!("✅ 已移除禁止路径: {}", normalized);
+    } else {
+        println!("⚠️  路径不在列表中: {}", normalized);
+    }
+    Ok(())
+}
+
+fn parse_bool(s: &str) -> Result<bool> {
+    match s.to_lowercase().as_str() {
+        "true" | "yes" | "1" | "on" => Ok(true),
+        "false" | "no" | "0" | "off" => Ok(false),
+        _ => Err(BjtError::ValidationError(format!(
+            "无效的布尔值: {}（支持 true/false/yes/no/1/0/on/off）",
+            s
+        ))),
+    }
 }
