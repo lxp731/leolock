@@ -223,6 +223,55 @@ Content-Disposition: attachment; filename="document.pdf"
 
 ---
 
+### 流式加密（原始二进制）
+
+```bash
+POST /api/v1/encrypt-stream
+```
+
+需要认证 + 服务已解锁。接收原始二进制 body（非 multipart），文件名通过 `X-Filename` 头指定。无 MIME 解析开销，比 multipart 端点更高效。
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/api/v1/encrypt-stream \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Filename: document.pdf" \
+  --data-binary @document.pdf \
+  -o document.leo
+```
+
+响应头：
+```
+Content-Type: application/octet-stream
+Content-Disposition: attachment; filename="a3f8e2d1.leo"
+```
+
+---
+
+### 流式解密（原始二进制）
+
+```bash
+POST /api/v1/decrypt-stream
+```
+
+需要认证 + 服务已解锁。接收原始 V3 加密二进制 body，返回解密数据。原文件名通过 `Content-Disposition` 头返回。
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/api/v1/decrypt-stream \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-binary @document.leo \
+  -o document_decrypted.pdf
+```
+
+响应头：
+```
+Content-Type: application/octet-stream
+Content-Disposition: attachment; filename="document.pdf"
+```
+
+> 与 multipart 端点的区别：stream 端点直接用 `--data-binary`（无 MIME 封装），适合脚本和自动化场景。multipart 端点用 `-F "file=@..."`，适合浏览器表单上传。
+
+---
+
 ### 文件列表
 
 ```bash
