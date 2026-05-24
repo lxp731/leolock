@@ -5,6 +5,7 @@
 - **V4 文件格式**: 文件头追加 12 字节 Argon2id 参数，AAD 同步保护。V1-V3 文件自动使用默认参数。
 - **多格式 list 输出**: `leolock list --format json|simple|table` 三种格式。
 - **Config API**: `GET /api/v1/config` 查看配置（敏感字段脱敏），`PUT /api/v1/config` 更新。
+- **CLI 配置管理**: `leolock config set <key> <value>` 修改配置项，`add-forbidden` / `remove-forbidden` 管理危险路径列表。
 
 ### 版本 1.4.0
 - **流式加解密端点**: `encrypt-stream` / `decrypt-stream`，接收原始二进制 body，无 MIME 解析开销。

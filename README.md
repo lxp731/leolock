@@ -75,11 +75,16 @@ leolock list . --show-original
 | 命令 | 说明 |
 |------|------|
 | `leolock init` | 初始化工具 |
-| `leolock encrypt <路径>` | 加密文件或文件夹 |
-| `leolock decrypt <路径>` | 解密文件或文件夹 |
+| `leolock encrypt <路径>` | 加密文件或目录 |
+| `leolock decrypt <路径>` | 解密文件或目录 |
 | `leolock list <路径>` | 列出加密文件信息 |
 | `leolock recover --backup <文件>` | 从备份文件恢复密钥 |
-| `leolock completions <shell>` | 生成shell补全脚本 |
+| `leolock completions <shell>` | 生成 shell 补全脚本 |
+| `leolock config show` | 查看当前配置 |
+| `leolock config validate` | 验证配置文件 |
+| `leolock config set <key> <value>` | 修改配置项 |
+| `leolock config add-forbidden <path>` | 添加禁止加密路径 |
+| `leolock config remove-forbidden <path>` | 移除禁止加密路径 |
 | `leolock config gen-api-key` | 生成 API Key |
 
 **常用选项:**
