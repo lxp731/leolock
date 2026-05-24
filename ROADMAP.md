@@ -52,18 +52,17 @@ LeoLock 致力于成为 Linux/Unix 环境下最安全、最易用、且高性能
 | GET | `/api/v1/files/get` | 单个文件详情 |
 | GET | `/api/v1/files/download` | 原地解密下载 |
 | DELETE | `/api/v1/files/delete` | 安全删除加密文件 |
+| POST | `/api/v1/encrypt-stream` | 原始二进制 body 加密 |
+| POST | `/api/v1/decrypt-stream` | 原始二进制 body 解密 |
 
 ---
 
-## 当前重点：API 完善 (v1.4.0)
+## 当前重点：安全加固 (v1.4.0)
 
-### 流式加解密
+### 流式加解密 — ✅
 
-- [ ] `POST /api/v1/encrypt-stream` — 分块上传 → 流式加密 → 流式返回
-- [ ] `POST /api/v1/decrypt-stream` — 分块上传 → 流式解密 → 流式返回
-
-> 当前 encrypt/decrypt 端点将整个文件缓冲在内存中。流式端点使用
-> `CryptoManager::encrypt_stream` 逐 chunk 处理，支持 GB 级文件。
+- [x] `POST /api/v1/encrypt-stream` — 原始二进制 body + X-Filename 头
+- [x] `POST /api/v1/decrypt-stream` — 原始二进制 V3 body 解密
 
 ### 安全加固
 

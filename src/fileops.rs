@@ -19,9 +19,21 @@ impl FileOps {
         config: &Config,
     ) -> Result<()> {
         if path.is_dir() {
-            Self::encrypt_directory(path, key, keep_original, config.preserve_original_filename, config.show_progress)
+            Self::encrypt_directory(
+                path,
+                key,
+                keep_original,
+                config.program.preserve_original_filename,
+                config.program.show_progress,
+            )
         } else {
-            CryptoManager::encrypt_file_v2(path, key, config.preserve_original_filename, keep_original).map(|_| ())
+            CryptoManager::encrypt_file_v2(
+                path,
+                key,
+                config.program.preserve_original_filename,
+                keep_original,
+            )
+            .map(|_| ())
         }
     }
 
@@ -33,7 +45,7 @@ impl FileOps {
         config: &Config,
     ) -> Result<()> {
         if path.is_dir() {
-            Self::decrypt_directory(path, key, keep_original, config.show_progress)
+            Self::decrypt_directory(path, key, keep_original, config.program.show_progress)
         } else {
             CryptoManager::decrypt_file_v2(path, key, keep_original).map(|_| ())
         }
@@ -118,7 +130,11 @@ impl FileOps {
             return Ok(());
         }
 
-        println!("文件数: {}, 总大小: {}", file_entries.len(), format_bytes(total_bytes));
+        println!(
+            "文件数: {}, 总大小: {}",
+            file_entries.len(),
+            format_bytes(total_bytes)
+        );
         println!("{}", "-".repeat(40));
 
         let pb = maybe_progress_bar(show_progress, file_entries.len() as u64);
@@ -146,7 +162,10 @@ impl FileOps {
 
         print_summary("加密", success_count, error_count, total_bytes);
         if error_count > 0 {
-            Err(BjtError::FileError(format!("加密完成，但有 {} 个文件失败", error_count)))
+            Err(BjtError::FileError(format!(
+                "加密完成，但有 {} 个文件失败",
+                error_count
+            )))
         } else {
             Ok(())
         }
@@ -215,7 +234,11 @@ impl FileOps {
             return Ok(());
         }
 
-        println!("加密文件数: {}, 总大小: {}", file_entries.len(), format_bytes(total_bytes));
+        println!(
+            "加密文件数: {}, 总大小: {}",
+            file_entries.len(),
+            format_bytes(total_bytes)
+        );
         println!("{}", "-".repeat(40));
 
         let pb = maybe_progress_bar(show_progress, file_entries.len() as u64);
@@ -253,7 +276,10 @@ impl FileOps {
         println!("  📊 总大小: {}", format_bytes(total_bytes));
 
         if error_count > 0 {
-            Err(BjtError::FileError(format!("解密完成，但有 {} 个文件失败", error_count)))
+            Err(BjtError::FileError(format!(
+                "解密完成，但有 {} 个文件失败",
+                error_count
+            )))
         } else {
             Ok(())
         }

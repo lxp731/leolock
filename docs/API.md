@@ -68,6 +68,34 @@ curl -s http://127.0.0.1:3000/api/v1/status | python3 -m json.tool
 
 ---
 
+### 轮换 API Key
+
+```bash
+POST /api/v1/auth/rotate-api-key
+```
+
+需要认证。API Key 泄漏时调用——用密码验证身份后生成新 Key，旧 Key 立即失效，无需重启服务。
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/api/v1/auth/rotate-api-key \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"password": "你的密码"}' | python3 -m json.tool
+```
+
+响应：
+```json
+{
+    "status": "rotated",
+    "message": "🔑 API Key 已轮换，旧 Key 立即失效。请保存新 Key！",
+    "api_key": "<新的API Key>"
+}
+```
+
+> 需要 JWT + 密码双重验证。只知道 API Key 不知道密码无法轮换。
+
+---
+
 ### 初始化
 
 ```bash

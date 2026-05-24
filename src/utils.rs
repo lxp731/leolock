@@ -1,6 +1,6 @@
 use crate::errors::{BjtError, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
@@ -26,38 +26,33 @@ impl Utils {
     #[allow(dead_code)]
     pub fn generate_salt() -> Result<String> {
         let mut salt = [0u8; 16];
-        getrandom::getrandom(&mut salt).map_err(|e| {
-            BjtError::CryptoError(format!("生成随机盐值失败: {}", e))
-        })?;
+        getrandom::getrandom(&mut salt)
+            .map_err(|e| BjtError::CryptoError(format!("生成随机盐值失败: {}", e)))?;
 
         Ok(STANDARD.encode(salt))
     }
 
-
-
-
-
     /// 生成文件名哈希（用于加密后的显示文件名）
     pub fn generate_filename_hash(filename: &str) -> String {
         let mut hasher = Sha256::new();
-        
+
         // 输入：原文件名 + 时间戳 + 随机数
         hasher.update(filename.as_bytes());
-        
+
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         hasher.update(timestamp.to_le_bytes());
-        
+
         let random: u64 = rand::random();
         hasher.update(random.to_le_bytes());
-        
+
         // 取前12字节的十六进制表示（24个字符）
         let result = hasher.finalize();
         hex::encode(&result[..12])
     }
-    
+
     /// 获取显示文件名（根据配置决定是否加密文件名）
     pub fn get_display_filename(filename: &str, preserve_original: bool) -> String {
         if preserve_original {
@@ -89,9 +84,8 @@ impl Utils {
 
             // 生成随机数据并写入
             let mut random_data = vec![0u8; file_size as usize];
-            getrandom::getrandom(&mut random_data).map_err(|e| {
-                BjtError::CryptoError(format!("生成随机数据失败: {}", e))
-            })?;
+            getrandom::getrandom(&mut random_data)
+                .map_err(|e| BjtError::CryptoError(format!("生成随机数据失败: {}", e)))?;
 
             file.write_all(&random_data)?;
             file.sync_all()?;
@@ -102,10 +96,4 @@ impl Utils {
 
         Ok(())
     }
-
-
-
-
-
-
 }

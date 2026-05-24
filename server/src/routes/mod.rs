@@ -1,9 +1,11 @@
 use axum::{
+    body::Body,
     extract::{Multipart, Query, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use http_body_util::BodyExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -98,13 +100,26 @@ impl From<std::io::Error> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            AppError::Locked => (StatusCode::LOCKED, "🔒 服务已锁定，请先 POST /api/v1/unlock".into()),
-            AppError::NotInitialized => (StatusCode::PRECONDITION_FAILED, "❌ 未初始化，请先执行 leolock init".into()),
+            AppError::Locked => (
+                StatusCode::LOCKED,
+                "🔒 服务已锁定，请先 POST /api/v1/unlock".into(),
+            ),
+            AppError::NotInitialized => (
+                StatusCode::PRECONDITION_FAILED,
+                "❌ 未初始化，请先执行 leolock init".into(),
+            ),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::CryptoError(msg) => (StatusCode::BAD_REQUEST, format!("加密错误: {}", msg)),
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
         };
-        (status, Json(MessageResponse { status: "error".into(), message })).into_response()
+        (
+            status,
+            Json(MessageResponse {
+                status: "error".into(),
+                message,
+            }),
+        )
+            .into_response()
     }
 }
 
@@ -124,9 +139,13 @@ async fn extract_file(mut multipart: Multipart) -> Result<MultipartFile, AppErro
         match name.as_str() {
             "file" => {
                 file_name = field.file_name().map(|s| s.to_string());
-                data = Some(field.bytes().await.map_err(|e| {
-                    AppError::BadRequest(format!("读取文件失败: {}", e))
-                })?.to_vec());
+                data = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|e| AppError::BadRequest(format!("读取文件失败: {}", e)))?
+                        .to_vec(),
+                );
             }
             _ => {}
         }
@@ -138,6 +157,61 @@ async fn extract_file(mut multipart: Multipart) -> Result<MultipartFile, AppErro
     })
 }
 
+// ─── 轮换 API Key ─────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct RotateApiKeyRequest {
+    /// 明文密码（用于验证身份），消费后立即 zeroize
+    password: String,
+}
+
+impl RotateApiKeyRequest {
+    fn into_password(self) -> Zeroizing<String> {
+        Zeroizing::new(self.password)
+    }
+}
+
+/// POST /api/v1/auth/rotate-api-key
+/// 用密码验证身份后生成新的 API Key（旧 Key 立即失效）
+pub async fn rotate_api_key(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<RotateApiKeyRequest>,
+) -> Result<Json<InitResponse>, AppError> {
+    let password = body.into_password();
+
+    // 验证密码
+    let salt_b64 = state
+        .salt
+        .as_ref()
+        .ok_or_else(|| AppError::BadRequest("配置中缺少盐值".into()))?;
+
+    use base64::Engine;
+    let salt = base64::engine::general_purpose::STANDARD
+        .decode(salt_b64)
+        .map_err(|e| AppError::BadRequest(format!("盐值解码失败: {}", e)))?;
+
+    CryptoManager::derive_key_from_password(&password, &salt)
+        .map_err(|e| AppError::CryptoError(format!("密码错误: {}", e)))?;
+
+    // 生成新 API Key
+    let mut config = leolock::config::Config::load().unwrap_or_default();
+    let api_key = config
+        .generate_api_key()
+        .map_err(|e| AppError::Internal(format!("生成 API Key 失败: {}", e)))?;
+    config
+        .save()
+        .map_err(|e| AppError::Internal(format!("保存配置失败: {}", e)))?;
+
+    // 更新运行时状态（旧 Key 立即失效，无需重启）
+    state.update_api_key_hash(config.auth.api_key_hash.clone().unwrap());
+
+    Ok(Json(InitResponse {
+        status: "rotated".into(),
+        message: "🔑 API Key 已轮换，旧 Key 立即失效。请保存新 Key！".into(),
+        api_key,
+    }))
+}
+
 // ─── 鉴权：登录 ────────────────────────────────────────────────
 
 pub async fn login(
@@ -145,14 +219,18 @@ pub async fn login(
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
     if !state.has_api_key() {
-        return Err(AppError::BadRequest("服务未生成 API Key，请先执行 leolock init".into()));
+        return Err(AppError::BadRequest(
+            "服务未生成 API Key，请先执行 leolock init".into(),
+        ));
     }
 
     if !state.verify_api_key(&body.api_key) {
         return Err(AppError::BadRequest("API Key 无效".into()));
     }
 
-    let secret = state.jwt_secret.as_ref()
+    let secret = state
+        .jwt_secret
+        .as_ref()
         .ok_or_else(|| AppError::Internal("JWT 密钥未配置".into()))?;
 
     let token = middleware::issue_token(secret)
@@ -171,9 +249,7 @@ pub async fn health() -> &'static str {
     "ok"
 }
 
-pub async fn status(
-    State(state): State<Arc<AppState>>,
-) -> Json<StatusResponse> {
+pub async fn status(State(state): State<Arc<AppState>>) -> Json<StatusResponse> {
     Json(StatusResponse {
         initialized: state.is_initialized,
         locked: !state.is_unlocked(),
@@ -193,7 +269,9 @@ pub async fn unlock(
         return Err(AppError::NotInitialized);
     }
 
-    let salt_b64 = state.salt.as_ref()
+    let salt_b64 = state
+        .salt
+        .as_ref()
         .ok_or_else(|| AppError::BadRequest("配置中缺少盐值".into()))?;
 
     use base64::Engine;
@@ -212,9 +290,7 @@ pub async fn unlock(
     }))
 }
 
-pub async fn lock(
-    State(state): State<Arc<AppState>>,
-) -> Json<MessageResponse> {
+pub async fn lock(State(state): State<Arc<AppState>>) -> Json<MessageResponse> {
     state.lock();
     Json(MessageResponse {
         status: "locked".into(),
@@ -257,15 +333,18 @@ pub async fn init(
     leolock::keymgmt::KeyManager::save_key(&key)?;
 
     // 保存盐值
-    config.salt = Some(salt_b64);
+    config.core.salt = Some(salt_b64);
 
     // 生成 API Key 和 JWT Secret
-    let api_key = config.generate_api_key()
+    let api_key = config
+        .generate_api_key()
         .map_err(|e| AppError::Internal(format!("生成 API Key 失败: {}", e)))?;
-    config.generate_jwt_secret()
+    config
+        .generate_jwt_secret()
         .map_err(|e| AppError::Internal(format!("生成 JWT 密钥失败: {}", e)))?;
 
-    config.save()
+    config
+        .save()
         .map_err(|e| AppError::Internal(format!("保存配置失败: {}", e)))?;
 
     // 创建备份
@@ -297,7 +376,10 @@ pub async fn encrypt(
 
     let headers = [
         (header::CONTENT_TYPE, "application/octet-stream"),
-        (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{}\"", hash)),
+        (
+            header::CONTENT_DISPOSITION,
+            &format!("attachment; filename=\"{}\"", hash),
+        ),
     ];
 
     Ok((headers, encrypted).into_response())
@@ -316,7 +398,10 @@ pub async fn decrypt(
 
     let headers = [
         (header::CONTENT_TYPE, "application/octet-stream"),
-        (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{}\"", original_name)),
+        (
+            header::CONTENT_DISPOSITION,
+            &format!("attachment; filename=\"{}\"", original_name),
+        ),
     ];
 
     Ok((headers, decrypted).into_response())
@@ -331,10 +416,11 @@ fn encode_id(path: &std::path::Path) -> String {
 
 fn decode_id(id: &str) -> Result<PathBuf, AppError> {
     use base64::Engine;
-    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(id)
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(id)
         .map_err(|_| AppError::BadRequest("无效的文件 ID".into()))?;
-    let path_str = String::from_utf8(bytes)
-        .map_err(|_| AppError::BadRequest("无效的文件 ID 编码".into()))?;
+    let path_str =
+        String::from_utf8(bytes).map_err(|_| AppError::BadRequest("无效的文件 ID 编码".into()))?;
     Ok(PathBuf::from(path_str))
 }
 
@@ -385,7 +471,10 @@ pub async fn list_files(
 ) -> Result<Json<ListResponse>, AppError> {
     let dir = PathBuf::from(&query.path);
     if !dir.is_dir() {
-        return Err(AppError::BadRequest(format!("目录不存在: {}", dir.display())));
+        return Err(AppError::BadRequest(format!(
+            "目录不存在: {}",
+            dir.display()
+        )));
     }
 
     let key = state.get_key();
@@ -491,7 +580,10 @@ pub async fn download_file(
     let file_path = decode_id(&query.id)?;
 
     if !file_path.exists() {
-        return Err(AppError::BadRequest(format!("文件不存在: {}", file_path.display())));
+        return Err(AppError::BadRequest(format!(
+            "文件不存在: {}",
+            file_path.display()
+        )));
     }
 
     let encrypted_data = std::fs::read(&file_path)?;
@@ -499,7 +591,10 @@ pub async fn download_file(
 
     let headers = [
         (header::CONTENT_TYPE, "application/octet-stream"),
-        (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{}\"", original_name)),
+        (
+            header::CONTENT_DISPOSITION,
+            &format!("attachment; filename=\"{}\"", original_name),
+        ),
     ];
 
     Ok((headers, decrypted).into_response())
@@ -516,7 +611,10 @@ pub async fn delete_file(
     let file_path = decode_id(&query.id)?;
 
     if !file_path.exists() {
-        return Err(AppError::BadRequest(format!("文件不存在: {}", file_path.display())));
+        return Err(AppError::BadRequest(format!(
+            "文件不存在: {}",
+            file_path.display()
+        )));
     }
 
     if file_path.extension().map_or(true, |e| e != "leo") {
@@ -529,4 +627,68 @@ pub async fn delete_file(
         status: "deleted".into(),
         message: format!("已删除: {}", file_path.display()),
     }))
+}
+
+// ─── 流式加密（原始二进制 body）─────────────────────────────
+
+/// POST /api/v1/encrypt-stream
+/// 接收原始二进制 body（非 multipart），X-Filename 头指定文件名
+/// 比 multipart 端点更高效，无 MIME 解析开销
+pub async fn encrypt_stream(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Body,
+) -> Result<Response, AppError> {
+    let key = state.get_key().ok_or(AppError::Locked)?;
+    let filename = headers
+        .get("X-Filename")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+
+    let data = body
+        .collect()
+        .await
+        .map(|b| b.to_bytes().to_vec())
+        .map_err(|e| AppError::BadRequest(format!("读取请求体失败: {}", e)))?;
+
+    let encrypted = CryptoManager::encrypt_data_v3(&data, filename, &key)?;
+    let hash = leolock::utils::Utils::get_display_filename(filename, false);
+
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", hash),
+        )
+        .body(Body::from(encrypted))
+        .unwrap())
+}
+
+// ─── 流式解密（原始二进制 body）─────────────────────────────
+
+/// POST /api/v1/decrypt-stream
+/// 接收原始 V3 加密二进制 body，返回解密数据
+/// 比 multipart 端点更高效，无 MIME 解析开销
+pub async fn decrypt_stream(
+    State(state): State<Arc<AppState>>,
+    body: Body,
+) -> Result<Response, AppError> {
+    let key = state.get_key().ok_or(AppError::Locked)?;
+
+    let data = body
+        .collect()
+        .await
+        .map(|b| b.to_bytes().to_vec())
+        .map_err(|e| AppError::BadRequest(format!("读取请求体失败: {}", e)))?;
+
+    let (original_name, decrypted) = CryptoManager::decrypt_data_v3(&data, &key)?;
+
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", original_name),
+        )
+        .body(Body::from(decrypted))
+        .unwrap())
 }

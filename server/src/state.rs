@@ -20,7 +20,8 @@ pub struct AppState {
     pub salt: Option<String>,
 
     /// API Key 的 Argon2id 哈希（从配置缓存，用于 login 验证）
-    pub api_key_hash: Option<String>,
+    /// 支持运行时更新（API Key 轮换后无需重启）
+    api_key_hash: RwLock<Option<String>>,
 
     /// 是否已初始化
     pub is_initialized: bool,
@@ -38,7 +39,7 @@ impl AppState {
             encryption_key: RwLock::new(None),
             jwt_secret,
             salt,
-            api_key_hash,
+            api_key_hash: RwLock::new(api_key_hash),
             is_initialized,
         }
     }
@@ -69,7 +70,8 @@ impl AppState {
 
     /// 验证 API Key
     pub fn verify_api_key(&self, key: &str) -> bool {
-        match &self.api_key_hash {
+        let guard = self.api_key_hash.read().unwrap();
+        match guard.as_ref() {
             Some(hash) => leolock::password::PasswordManager::verify_api_key(key, hash),
             None => false,
         }
@@ -77,6 +79,12 @@ impl AppState {
 
     /// 检查 API Key 是否已配置
     pub fn has_api_key(&self) -> bool {
-        self.api_key_hash.is_some()
+        self.api_key_hash.read().unwrap().is_some()
+    }
+
+    /// 更新 API Key 哈希（用于运行时轮换，无需重启服务）
+    pub fn update_api_key_hash(&self, hash: String) {
+        let mut guard = self.api_key_hash.write().unwrap();
+        *guard = Some(hash);
     }
 }

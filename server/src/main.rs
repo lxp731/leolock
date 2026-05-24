@@ -1,17 +1,17 @@
-mod state;
-mod routes;
 mod middleware;
+mod routes;
+mod state;
 
 use axum::{
     middleware as axum_mw,
     routing::{delete, get, post},
     Router,
 };
+use leolock::config::Config;
 use std::sync::Arc;
 use tower::limit::ConcurrencyLimitLayer;
 use tower_http::cors::CorsLayer;
 use tower_http::limit::RequestBodyLimitLayer;
-use leolock::config::Config;
 
 const MAX_REQUEST_BYTES: usize = 2 * 1024 * 1024 * 1024; // 2GB
 const MAX_CONCURRENT: usize = 8;
@@ -22,13 +22,14 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::load().unwrap_or_default();
 
     let app_state = Arc::new(state::AppState::new(
-        config.jwt_secret.clone(),
-        config.salt.clone(),
-        config.api_key_hash.clone(),
+        config.auth.jwt_secret.clone(),
+        config.core.salt.clone(),
+        config.auth.api_key_hash.clone(),
         config.is_initialized(),
     ));
 
     let has_api_key = app_state.has_api_key();
+    let addr = format!("{}:{}", config.server.bind_address, config.server.port);
 
     // 公开路由（无需 Token）
     let public = Router::new()
@@ -39,10 +40,13 @@ async fn main() -> anyhow::Result<()> {
 
     // 受保护路由（需要 Token）
     let protected = Router::new()
+        .route("/api/v1/auth/rotate-api-key", post(routes::rotate_api_key))
         .route("/api/v1/unlock", post(routes::unlock))
         .route("/api/v1/lock", post(routes::lock))
         .route("/api/v1/encrypt", post(routes::encrypt))
         .route("/api/v1/decrypt", post(routes::decrypt))
+        .route("/api/v1/encrypt-stream", post(routes::encrypt_stream))
+        .route("/api/v1/decrypt-stream", post(routes::decrypt_stream))
         .route("/api/v1/files", get(routes::list_files))
         .route("/api/v1/files/get", get(routes::get_file))
         .route("/api/v1/files/download", get(routes::download_file))
@@ -60,7 +64,6 @@ async fn main() -> anyhow::Result<()> {
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 
-    let addr = "127.0.0.1:3000";
     println!("🚀 LeoLock API 服务已启动");
     println!("   地址: http://{}", addr);
     println!("   状态: 🔒 LOCKED（需要 POST /api/v1/unlock 解锁）");

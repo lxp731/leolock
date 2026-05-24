@@ -40,7 +40,11 @@ pub async fn auth_middleware(
     let token = match auth_header {
         Some(t) => t,
         None => {
-            return (StatusCode::UNAUTHORIZED, "缺少 Authorization header，请先登录").into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                "缺少 Authorization header，请先登录",
+            )
+                .into_response();
         }
     };
 
@@ -62,9 +66,7 @@ pub async fn auth_middleware(
             // Token 有效，放行
             next.run(req).await
         }
-        Err(_) => {
-            (StatusCode::UNAUTHORIZED, "Token 无效或已过期，请重新登录").into_response()
-        }
+        Err(_) => (StatusCode::UNAUTHORIZED, "Token 无效或已过期，请重新登录").into_response(),
     }
 }
 

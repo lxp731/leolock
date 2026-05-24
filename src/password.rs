@@ -58,9 +58,9 @@ impl PasswordManager {
     /// 交互式输入密码（无回显，且自动清理内存）
     pub fn read_password_interactive(prompt: &str) -> Result<Zeroizing<String>> {
         print!("{}: ", prompt);
-        io::stdout().flush().map_err(|e| {
-            BjtError::PasswordError(format!("刷新输出失败: {}", e))
-        })?;
+        io::stdout()
+            .flush()
+            .map_err(|e| BjtError::PasswordError(format!("刷新输出失败: {}", e)))?;
 
         // 尝试使用rpassword，如果失败则回退到标准输入
         let password = match read_password() {
@@ -100,9 +100,9 @@ impl PasswordManager {
     /// 从标准输入读取密码（非交互式，适用于管道）
     pub fn get_password_from_stdin() -> Result<Zeroizing<String>> {
         let mut p = String::new();
-        io::stdin().read_to_string(&mut p).map_err(|e| {
-            BjtError::PasswordError(format!("从标准输入读取失败: {}", e))
-        })?;
+        io::stdin()
+            .read_to_string(&mut p)
+            .map_err(|e| BjtError::PasswordError(format!("从标准输入读取失败: {}", e)))?;
         // 移除末尾换行符
         let trimmed = p.trim_end_matches(['\r', '\n']).to_string();
         Ok(Zeroizing::new(trimmed))
@@ -110,9 +110,8 @@ impl PasswordManager {
 
     /// 从系统钥匙串获取密码
     pub fn get_password_from_keyring() -> Result<Zeroizing<String>> {
-        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| {
-            BjtError::PasswordError(format!("访问钥匙串失败: {}", e))
-        })?;
+        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)
+            .map_err(|e| BjtError::PasswordError(format!("访问钥匙串失败: {}", e)))?;
 
         match entry.get_password() {
             Ok(p) => Ok(Zeroizing::new(p)),
@@ -125,13 +124,12 @@ impl PasswordManager {
 
     /// 将密码保存到系统钥匙串
     pub fn set_password_to_keyring(password: &str) -> Result<()> {
-        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| {
-            BjtError::PasswordError(format!("访问钥匙串失败: {}", e))
-        })?;
+        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)
+            .map_err(|e| BjtError::PasswordError(format!("访问钥匙串失败: {}", e)))?;
 
-        entry.set_password(password).map_err(|e| {
-            BjtError::PasswordError(format!("保存密码到钥匙串失败: {}", e))
-        })?;
+        entry
+            .set_password(password)
+            .map_err(|e| BjtError::PasswordError(format!("保存密码到钥匙串失败: {}", e)))?;
         Ok(())
     }
 
@@ -225,7 +223,7 @@ impl PasswordManager {
         if let Some(parent) = password_file_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        
+
         // 保存密码哈希
         fs::write(password_file_path, password_hash)?;
         Ok(())
@@ -238,7 +236,7 @@ impl PasswordManager {
                 "密码文件不存在，请先运行 'leolock init'".to_string(),
             ));
         }
-        
+
         let password_hash = fs::read_to_string(password_file_path)?;
         Ok(password_hash)
     }
@@ -250,7 +248,7 @@ impl PasswordManager {
         password_file_path: &Path,
     ) -> Result<String> {
         let stored_hash = Self::load_password_hash(password_file_path)?;
-        
+
         if Self::verify_password(password, &stored_hash)? {
             Ok(stored_hash)
         } else {

@@ -3,176 +3,319 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// 统一的应用程序配置
+// ─── 程序基础设置 ──────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
-pub struct Config {
-    // === 安全设置 ===
-    
+pub struct ProgramConfig {
     /// 危险路径列表（禁止处理的系统目录）
+    #[serde(default = "default_forbidden_paths")]
     pub forbidden_paths: Vec<String>,
-    
+
     /// 最大文件大小（字节），0表示无限制
+    #[serde(default = "default_max_file_size")]
     pub max_file_size: u64,
-    
-    // === 加密设置 ===
-    
+
     /// 默认加密文件后缀
+    #[serde(default = "default_extension")]
     pub default_extension: String,
-    
+
     /// 密钥文件位置
+    #[serde(default = "default_key_file_path")]
     pub key_file_path: String,
-    
+
     /// 是否保留原文件名（false=加密文件名，true=保留文件名）
+    #[serde(default = "default_false")]
     pub preserve_original_filename: bool,
-    
+
     /// 是否显示进度条
+    #[serde(default = "default_true")]
     pub show_progress: bool,
-    
+
     /// 加密文件格式版本
+    #[serde(default = "default_file_version")]
     pub file_format_version: u8,
-    
-    // === 核心安全数据 ===
-    
+}
+
+impl Default for ProgramConfig {
+    fn default() -> Self {
+        Self {
+            forbidden_paths: default_forbidden_paths(),
+            max_file_size: default_max_file_size(),
+            default_extension: default_extension(),
+            key_file_path: default_key_file_path(),
+            preserve_original_filename: false,
+            show_progress: true,
+            file_format_version: 2,
+        }
+    }
+}
+
+// ─── 加密核心数据 ──────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoreConfig {
     /// 盐值（base64编码，用于从密码派生密钥）
-    /// None = 未初始化，Some = 已初始化
+    /// None = 未初始化
+    #[serde(default)]
     pub salt: Option<String>,
+}
 
-    // === API 鉴权 ===
+impl Default for CoreConfig {
+    fn default() -> Self {
+        Self { salt: None }
+    }
+}
 
-    /// API Key 的 Argon2id 哈希（用于 API 鉴权验证）
-    /// None = 未生成 API Key
+// ─── API 鉴权 ─────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthConfig {
+    /// API Key 的 Argon2id 哈希
+    #[serde(default)]
     pub api_key_hash: Option<String>,
 
-    /// JWT 签名密钥（256位随机数 base64 编码，用于签发和验证 Token）
-    /// None = 未生成
+    /// JWT 签名密钥（256位随机数 base64 编码）
+    #[serde(default)]
     pub jwt_secret: Option<String>,
 }
 
-impl Default for Config {
+impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            forbidden_paths: vec![
-                // 系统核心目录（绝对不能加密）
-                "/bin".to_string(),
-                "/sbin".to_string(),
-                "/usr/bin".to_string(),
-                "/usr/sbin".to_string(),
-                "/lib".to_string(),
-                "/lib64".to_string(),
-                "/usr/lib".to_string(),
-                "/usr/lib64".to_string(),
-                
-                // 系统运行时目录
-                "/boot".to_string(),
-                "/dev".to_string(),
-                "/proc".to_string(),
-                "/sys".to_string(),
-                "/run".to_string(),
-                "/etc".to_string(),
-                
-                // 特殊目录
-                "/root".to_string(),     // root用户家目录
-            ],
-            max_file_size: 10 * 1024 * 1024 * 1024, // 10GB
-            default_extension: ".leo".to_string(),
-            key_file_path: "~/.config/leolock/keys.toml".to_string(),
-            preserve_original_filename: false,  // 默认加密文件名
-            show_progress: true,                // 默认显示进度条
-            file_format_version: 2,             // 新文件格式版本
-            salt: None,
             api_key_hash: None,
             jwt_secret: None,
         }
     }
 }
 
+// ─── API 服务 ─────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerConfig {
+    /// API 服务监听地址
+    #[serde(default = "default_bind_address")]
+    pub bind_address: String,
+
+    /// API 服务监听端口
+    #[serde(default = "default_port")]
+    pub port: u16,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            bind_address: default_bind_address(),
+            port: default_port(),
+        }
+    }
+}
+
+// ─── 顶层配置 ─────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Config {
+    #[serde(default)]
+    pub program: ProgramConfig,
+
+    #[serde(default)]
+    pub core: CoreConfig,
+
+    #[serde(default)]
+    pub auth: AuthConfig,
+
+    #[serde(default)]
+    pub server: ServerConfig,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            program: ProgramConfig::default(),
+            core: CoreConfig::default(),
+            auth: AuthConfig::default(),
+            server: ServerConfig::default(),
+        }
+    }
+}
+
+// ─── 旧版扁平格式（用于自动迁移）──────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct FlatConfig {
+    #[serde(default)]
+    forbidden_paths: Option<Vec<String>>,
+    #[serde(default)]
+    max_file_size: Option<u64>,
+    #[serde(default)]
+    default_extension: Option<String>,
+    #[serde(default)]
+    key_file_path: Option<String>,
+    #[serde(default)]
+    preserve_original_filename: Option<bool>,
+    #[serde(default)]
+    show_progress: Option<bool>,
+    #[serde(default)]
+    file_format_version: Option<u8>,
+    #[serde(default)]
+    salt: Option<String>,
+    #[serde(default)]
+    api_key_hash: Option<String>,
+    #[serde(default)]
+    jwt_secret: Option<String>,
+    #[serde(default)]
+    bind_address: Option<String>,
+    #[serde(default)]
+    port: Option<u16>,
+}
+
+impl From<FlatConfig> for Config {
+    fn from(f: FlatConfig) -> Self {
+        let program = ProgramConfig::default();
+        Config {
+            program: ProgramConfig {
+                forbidden_paths: f.forbidden_paths.unwrap_or(program.forbidden_paths),
+                max_file_size: f.max_file_size.unwrap_or(program.max_file_size),
+                default_extension: f.default_extension.unwrap_or(program.default_extension),
+                key_file_path: f.key_file_path.unwrap_or(program.key_file_path),
+                preserve_original_filename: f
+                    .preserve_original_filename
+                    .unwrap_or(program.preserve_original_filename),
+                show_progress: f.show_progress.unwrap_or(program.show_progress),
+                file_format_version: f.file_format_version.unwrap_or(program.file_format_version),
+            },
+            core: CoreConfig { salt: f.salt },
+            auth: AuthConfig {
+                api_key_hash: f.api_key_hash,
+                jwt_secret: f.jwt_secret,
+            },
+            server: ServerConfig {
+                bind_address: f.bind_address.unwrap_or_else(default_bind_address),
+                port: f.port.unwrap_or_else(default_port),
+            },
+        }
+    }
+}
+
+// ─── serde 默认值函数 ─────────────────────────────────────────
+
+fn default_forbidden_paths() -> Vec<String> {
+    vec![
+        "/bin".into(),
+        "/sbin".into(),
+        "/usr/bin".into(),
+        "/usr/sbin".into(),
+        "/lib".into(),
+        "/lib64".into(),
+        "/usr/lib".into(),
+        "/usr/lib64".into(),
+        "/boot".into(),
+        "/dev".into(),
+        "/proc".into(),
+        "/sys".into(),
+        "/run".into(),
+        "/etc".into(),
+        "/root".into(),
+        "/var".into(),
+        "/tmp".into(),
+    ]
+}
+fn default_max_file_size() -> u64 {
+    10 * 1024 * 1024 * 1024
+}
+fn default_extension() -> String {
+    ".leo".into()
+}
+fn default_key_file_path() -> String {
+    "~/.config/leolock/keys.toml".into()
+}
+fn default_file_version() -> u8 {
+    2
+}
+fn default_bind_address() -> String {
+    "127.0.0.1".into()
+}
+fn default_port() -> u16 {
+    3000
+}
+fn default_true() -> bool {
+    true
+}
+fn default_false() -> bool {
+    false
+}
+
+// ─── Config 方法 ──────────────────────────────────────────────
+
 impl Config {
-    // === 配置文件管理 ===
-    
-    /// 加载配置文件
+    /// 加载配置文件（自动迁移旧格式）
     pub fn load() -> Result<Self> {
         Self::load_with_path().map(|(config, _)| config)
     }
-    
-    /// 加载配置文件并返回实际使用的路径
+
+    /// 加载配置文件并返回实际路径
     pub fn load_with_path() -> Result<(Self, Option<PathBuf>)> {
-        // 1. 尝试从环境变量获取配置文件路径
         let config_paths = Self::get_config_paths();
-        
+
         for path in config_paths {
             if path.exists() {
                 let content = fs::read_to_string(&path)?;
+
+                // 检测旧格式（无 [section] 头），自动迁移
+                if !content.contains("[program]")
+                    && !content.contains("[core]")
+                    && !content.contains("[auth]")
+                    && !content.contains("[server]")
+                {
+                    if let Ok(flat) = toml::from_str::<FlatConfig>(&content) {
+                        let config: Config = flat.into();
+                        config.save_to(&path)?;
+                        return Ok((config, Some(path)));
+                    }
+                }
+
+                // 新格式
                 let config: Config = toml::from_str(&content).map_err(|e| {
                     BjtError::ConfigError(format!("解析配置文件失败 {}: {}", path.display(), e))
                 })?;
-                
                 return Ok((config, Some(path)));
             }
         }
-        
-        // 2. 使用默认配置（未初始化状态）
+
         Ok((Config::default(), None))
     }
-    
-    /// 获取可能的配置文件路径
+
+    /// 保存配置文件
+    pub fn save(&self) -> Result<()> {
+        let config_dir = Self::get_default_config_dir()?;
+        fs::create_dir_all(&config_dir)?;
+        let config_path = config_dir.join("config.toml");
+        self.save_to(&config_path)
+    }
+
+    fn save_to(&self, path: &Path) -> Result<()> {
+        let content = toml::to_string_pretty(self)
+            .map_err(|e| BjtError::ConfigError(format!("序列化配置失败: {}", e)))?;
+        fs::write(path, content)?;
+        Ok(())
+    }
+
+    // ─── 路径相关 ──────────────────────────────────────────
+
     pub fn get_config_paths() -> Vec<PathBuf> {
-        let mut paths = Vec::new();
-        
-        // 1. 当前目录的配置文件
-        paths.push(PathBuf::from(".leolock.toml"));
-        
-        // 2. 从环境变量获取
+        let mut paths = vec![PathBuf::from(".leolock.toml")];
         if let Ok(env_path) = std::env::var("LEOLOCK_CONFIG") {
             paths.push(PathBuf::from(env_path));
         }
-        
-        // 3. XDG 配置目录
         if let Some(config_dir) = dirs::config_dir() {
             paths.push(config_dir.join("leolock").join("config.toml"));
         }
-        
-        // 4. 用户主目录
         if let Some(home_dir) = dirs::home_dir() {
             paths.push(home_dir.join(".leolock.toml"));
             paths.push(home_dir.join(".config").join("leolock.toml"));
         }
-        
         paths
     }
-    
-    /// 保存配置文件（只保存非敏感设置）
-    pub fn save(&self) -> Result<()> {
-        let config_dir = Self::get_default_config_dir()?;
-        
-        // 确保目录存在
-        fs::create_dir_all(&config_dir)?;
-        
-        let config_path = config_dir.join("config.toml");
-        
-        // 创建配置
-        let safe_config = SafeConfig {
-            forbidden_paths: self.forbidden_paths.clone(),
-            max_file_size: self.max_file_size,
-            default_extension: self.default_extension.clone(),
-            key_file_path: self.key_file_path.clone(),
-            preserve_original_filename: self.preserve_original_filename,
-            show_progress: self.show_progress,
-            file_format_version: self.file_format_version,
-            salt: self.salt.clone(),
-            api_key_hash: self.api_key_hash.clone(),
-            jwt_secret: self.jwt_secret.clone(),
-        };
-        
-        let content = toml::to_string_pretty(&safe_config).map_err(|e| {
-            BjtError::ConfigError(format!("序列化配置失败: {}", e))
-        })?;
-        
-        fs::write(config_path, content)?;
-        Ok(())
-    }
-    
-    /// 获取默认配置目录
+
     pub fn get_default_config_dir() -> Result<PathBuf> {
         if let Some(config_dir) = dirs::config_dir() {
             Ok(config_dir.join("leolock"))
@@ -182,122 +325,88 @@ impl Config {
             Err(BjtError::ConfigError("无法确定配置目录".to_string()))
         }
     }
-    
-    /// 检查工具是否已初始化
-    pub fn is_initialized(&self) -> bool {
-        // 通过盐值存在性判断是否初始化
-        self.salt.is_some()
-    }
 
-    /// 检查 API Key 是否已生成
-    #[allow(dead_code)]
-    pub fn has_api_key(&self) -> bool {
-        self.api_key_hash.is_some()
-    }
-
-    /// 生成 API Key（返回明文，哈希存入配置）
-    /// 调用者负责把明文展示给用户并立即保存配置
-    pub fn generate_api_key(&mut self) -> Result<String> {
-        use base64::Engine;
-        let mut raw = [0u8; 32];
-        getrandom::getrandom(&mut raw)
-            .map_err(|e| BjtError::CryptoError(format!("生成 API Key 失败: {}", e)))?;
-        let api_key = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
-
-        // 用 Argon2id 哈希存储
-        let hash = crate::password::PasswordManager::hash_api_key(&api_key)?;
-        self.api_key_hash = Some(hash);
-
-        Ok(api_key)
-    }
-
-    /// 生成 JWT 签名密钥（存 base64，256位随机数）
-    pub fn generate_jwt_secret(&mut self) -> Result<()> {
-        use base64::Engine;
-        let mut raw = [0u8; 32];
-        getrandom::getrandom(&mut raw)
-            .map_err(|e| BjtError::CryptoError(format!("生成 JWT 密钥失败: {}", e)))?;
-        self.jwt_secret = Some(base64::engine::general_purpose::STANDARD.encode(raw));
-        Ok(())
-    }
-
-    /// 验证 API Key（对比存储的哈希）
-    #[allow(dead_code)]
-    pub fn verify_api_key(&self, key: &str) -> bool {
-        match &self.api_key_hash {
-            Some(hash) => crate::password::PasswordManager::verify_api_key(key, hash),
-            None => false,
-        }
-    }
-    
-    /// 获取配置目录路径
     pub fn config_dir() -> Result<PathBuf> {
         Self::get_default_config_dir()
     }
-    
-    /// 获取密钥文件路径
-    pub fn key_file_path(&self) -> Result<PathBuf> {
-        let path_str = shellexpand::full(&self.key_file_path).map_err(|e| {
-            BjtError::ConfigError(format!("展开路径失败: {}", e))
-        })?;
-        Ok(PathBuf::from(path_str.to_string()))
-    }
-    
-    /// 获取密码文件路径
-    #[allow(dead_code)]
-    /// 静态方法：获取默认密钥文件路径
-    pub fn default_key_file_path() -> Result<PathBuf> {
-        let config = Config::load()?;
-        config.key_file_path()
-    }
-    
-    /// 静态方法：获取配置文件路径
+
     pub fn config_file_path() -> Result<PathBuf> {
         let config_dir = Self::get_default_config_dir()?;
         Ok(config_dir.join("config.toml"))
     }
-    
-    /// 创建配置目录
+
+    pub fn key_file_path(&self) -> Result<PathBuf> {
+        let path_str = shellexpand::full(&self.program.key_file_path)
+            .map_err(|e| BjtError::ConfigError(format!("展开路径失败: {}", e)))?;
+        Ok(PathBuf::from(path_str.to_string()))
+    }
+
+    #[allow(dead_code)]
+    pub fn default_key_file_path() -> Result<PathBuf> {
+        let config = Config::load()?;
+        config.key_file_path()
+    }
+
     #[allow(dead_code)]
     pub fn create_config_dir() -> Result<()> {
         let config_dir = Self::get_default_config_dir()?;
         fs::create_dir_all(&config_dir)?;
         Ok(())
     }
-    
-    // === 安全路径检查 ===
-    
-    /// 检查路径是否安全（不在危险路径中）
+
+    // ─── 状态查询 ──────────────────────────────────────────
+
+    pub fn is_initialized(&self) -> bool {
+        self.core.salt.is_some()
+    }
+
+    #[allow(dead_code)]
+    pub fn has_api_key(&self) -> bool {
+        self.auth.api_key_hash.is_some()
+    }
+
+    // ─── API 鉴权 ──────────────────────────────────────────
+
+    pub fn generate_api_key(&mut self) -> Result<String> {
+        use base64::Engine;
+        let mut raw = [0u8; 32];
+        getrandom::getrandom(&mut raw)
+            .map_err(|e| BjtError::CryptoError(format!("生成 API Key 失败: {}", e)))?;
+        let api_key = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
+        let hash = crate::password::PasswordManager::hash_api_key(&api_key)?;
+        self.auth.api_key_hash = Some(hash);
+        Ok(api_key)
+    }
+
+    pub fn generate_jwt_secret(&mut self) -> Result<()> {
+        use base64::Engine;
+        let mut raw = [0u8; 32];
+        getrandom::getrandom(&mut raw)
+            .map_err(|e| BjtError::CryptoError(format!("生成 JWT 密钥失败: {}", e)))?;
+        self.auth.jwt_secret = Some(base64::engine::general_purpose::STANDARD.encode(raw));
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn verify_api_key(&self, key: &str) -> bool {
+        match &self.auth.api_key_hash {
+            Some(hash) => crate::password::PasswordManager::verify_api_key(key, hash),
+            None => false,
+        }
+    }
+
+    // ─── 安全检查 ──────────────────────────────────────────
+
     pub fn is_safe_path(&self, path: &Path) -> bool {
         let canonical = match fs::canonicalize(path) {
             Ok(p) => p,
             Err(_) => return false,
         };
-        
-        for forbidden in &self.forbidden_paths {
+        for forbidden in &self.program.forbidden_paths {
             if canonical.starts_with(forbidden) {
                 return false;
             }
         }
-        
         true
     }
-    
-
-}
-
-/// 安全配置（只包含可以保存到文件的非敏感设置）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
-struct SafeConfig {
-    pub forbidden_paths: Vec<String>,
-    pub max_file_size: u64,
-    pub default_extension: String,
-    pub key_file_path: String,
-    pub preserve_original_filename: bool,
-    pub show_progress: bool,
-    pub file_format_version: u8,
-    pub salt: Option<String>,
-    pub api_key_hash: Option<String>,
-    pub jwt_secret: Option<String>,
 }

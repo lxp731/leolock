@@ -5,10 +5,10 @@ use crate::errors::{BjtError, Result};
 use chrono::Local;
 use dirs::home_dir;
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroizing;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use zeroize::Zeroizing;
 
 #[allow(dead_code)]
 const BACKUP_PREFIX: &str = "leolock_key_backup";
@@ -72,7 +72,7 @@ impl KeyManager {
     /// 加载密钥文件
     pub fn load_key() -> Result<[u8; 32]> {
         let key_path = Config::default_key_file_path()?;
-        
+
         if !key_path.exists() {
             return Err(BjtError::KeyError(
                 "密钥文件不存在，请先运行 'leolock init'".to_string(),
@@ -101,11 +101,10 @@ impl KeyManager {
         // 生成备份文件名（时间戳精确到秒）
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
         let backup_name = format!("{}_{}.{}", BACKUP_PREFIX, timestamp, BACKUP_EXTENSION);
-        
-        let home = home_dir().ok_or_else(|| {
-            BjtError::BackupError("无法获取用户家目录".to_string())
-        })?;
-        
+
+        let home =
+            home_dir().ok_or_else(|| BjtError::BackupError("无法获取用户家目录".to_string()))?;
+
         let backup_path = home.join(&backup_name);
 
         // 检查是否已存在同名文件
@@ -124,16 +123,11 @@ impl KeyManager {
     }
 
     /// 加密并保存备份文件
-    fn encrypt_and_save_backup(
-        backup_path: &Path,
-        key: &[u8; 32],
-        password: &str,
-    ) -> Result<()> {
+    fn encrypt_and_save_backup(backup_path: &Path, key: &[u8; 32], password: &str) -> Result<()> {
         // 生成随机盐值用于密钥派生
         let mut salt = [0u8; 16];
-        getrandom::getrandom(&mut salt).map_err(|e| {
-            BjtError::CryptoError(format!("生成随机盐值失败: {}", e))
-        })?;
+        getrandom::getrandom(&mut salt)
+            .map_err(|e| BjtError::CryptoError(format!("生成随机盐值失败: {}", e)))?;
 
         // 从密码派生加密密钥
         let encryption_key = CryptoManager::derive_key_from_password(password, &salt)?;
@@ -150,9 +144,8 @@ impl KeyManager {
         };
 
         // 序列化为JSON
-        let json_data = serde_json::to_vec(&backup_data).map_err(|e| {
-            BjtError::BackupError(format!("序列化备份数据失败: {}", e))
-        })?;
+        let json_data = serde_json::to_vec(&backup_data)
+            .map_err(|e| BjtError::BackupError(format!("序列化备份数据失败: {}", e)))?;
 
         // 写入文件
         fs::write(backup_path, &json_data).map_err(|e| {
@@ -166,9 +159,7 @@ impl KeyManager {
     #[allow(dead_code)]
     pub fn recover_from_backup(backup_path: &Path, password: &str) -> Result<[u8; 32]> {
         if !backup_path.exists() {
-            return Err(BjtError::BackupError(
-                "备份文件不存在".to_string(),
-            ));
+            return Err(BjtError::BackupError("备份文件不存在".to_string()));
         }
 
         // 读取备份文件
@@ -177,9 +168,8 @@ impl KeyManager {
         })?;
 
         // 解析备份数据
-        let backup_data: BackupData = serde_json::from_slice(&json_data).map_err(|e| {
-            BjtError::BackupError(format!("解析备份文件失败: {}", e))
-        })?;
+        let backup_data: BackupData = serde_json::from_slice(&json_data)
+            .map_err(|e| BjtError::BackupError(format!("解析备份文件失败: {}", e)))?;
 
         // 验证版本
         if backup_data.metadata.version != 1 {
@@ -190,17 +180,12 @@ impl KeyManager {
         }
 
         // 从密码派生加密密钥
-        let encryption_key = CryptoManager::derive_key_from_password(
-            password,
-            &backup_data.salt,
-        )?;
+        let encryption_key = CryptoManager::derive_key_from_password(password, &backup_data.salt)?;
         let encryption_key_zeroizing = Zeroizing::new(encryption_key);
 
         // 解密密钥数据
-        let decrypted_key = CryptoManager::decrypt_data(
-            &backup_data.encrypted_key,
-            &encryption_key_zeroizing,
-        )?;
+        let decrypted_key =
+            CryptoManager::decrypt_data(&backup_data.encrypted_key, &encryption_key_zeroizing)?;
 
         if decrypted_key.len() != 32 {
             return Err(BjtError::BackupError(format!(
