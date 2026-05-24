@@ -10,7 +10,7 @@ cargo build
 cargo build --release
 
 # 构建 API 服务
-cargo build -p leolock-server
+cargo build -p leolock-api
 
 # 构建整个 workspace
 cargo build --workspace
@@ -19,7 +19,7 @@ cargo build --workspace
 cargo run -- <命令>
 
 # 运行 API 服务
-cargo run -p leolock-server
+cargo run -p leolock-api
 
 # 测试
 cargo test --workspace
@@ -44,7 +44,7 @@ cargo clippy
 
 ```
 leolock/
-├── Cargo.toml              # workspace (members: ["", "server"])
+├── Cargo.toml              # workspace (members: ["", "api"])
 ├── src/                    # CLI + lib crate
 │   ├── main.rs             # CLI 入口 (clap, 7 个子命令)
 │   ├── lib.rs              # 库入口 (导出所有模块)
@@ -56,7 +56,7 @@ leolock/
 │   ├── errors.rs           # ThisError 统一错误类型
 │   └── utils.rs            # SHA256 哈希、安全删除
 │
-├── server/                 # API 服务子 crate
+├── api/                    # API 服务子 crate
 │   ├── Cargo.toml
 │   └── src/
 │       ├── main.rs         # axum 启动 + 路由注册

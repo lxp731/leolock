@@ -313,7 +313,7 @@ leolock/
 │   ├── errors.rs
 │   └── utils.rs
 │
-├── server/                 # ✨ 新增：API 服务
+├── api/                 # ✨ 新增：API 服务
 │   ├── Cargo.toml
 │   └── src/
 │       ├── main.rs         # tokio + axum 启动
@@ -344,7 +344,7 @@ leolock/
 
 Cargo.toml (workspace):
 [workspace]
-members = ["", "server"]
+members = ["", "api"]
 ```
 
 ---
@@ -354,7 +354,7 @@ members = ["", "server"]
 ### Phase 1: 核心 API（2-3 天）
 
 ```
-[ ] 创建 server/ crate，引入 axum + tokio
+[ ] 创建 api/ crate，引入 axum + tokio
 [ ] 实现 AppState（锁定/解锁状态管理）
 [ ] POST /api/v1/unlock  ← 密码 → 派生密钥 → 驻内存
 [ ] POST /api/v1/lock    ← 擦除密钥
@@ -472,7 +472,7 @@ $ curl -X POST http://localhost:3000/api/v1/encrypt \
 
 **一句话**：LeoLock 的核心加密逻辑已经足够成熟，API 化本质上就是给现有的 `lib.rs` 套一层 HTTP 壳。
 
-- 改动量小（不动现有代码，新增 `server/` crate）
+- 改动量小（不动现有代码，新增 `api/` crate）
 - 安全设计先行（unlock/lock 模式 + JWT + zeroize）
 - 渐进交付（Phase 1 就能用 curl 加解密）
 - 为 leochat / 手机端 / cron 自动化铺平道路

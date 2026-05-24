@@ -4,7 +4,7 @@
 
 | 命令 | 说明 |
 |------|------|
-| `leolock init` | 初始化工具（创建配置和密钥） |
+| `leolock init` | 初始化工具（创建配置、密钥、盐值、API Key） |
 | `--save-to-keyring` | (Init 选项) 初始化后将密码保存到系统钥匙串 |
 | `leolock recover --backup <文件>` | 从备份文件恢复密钥 |
 
@@ -42,14 +42,39 @@
 | 选项 | 说明 |
 |------|------|
 | `--show-original` | 显示原文件名（需要密码验证） |
-| `--sort-by-size <asc/desc>` | 按文件大小排序（升序/降序） |
+| `--sort-by-size <asc\|desc>` | 按文件大小排序（升序/降序） |
+| `--format <table\|json\|simple>` | 输出格式（默认 table） |
 
 ### 配置管理
 
-| 命令 | 说明 |
+`leolock config <子命令>`
+
+| 子命令 | 说明 |
 |------|------|
-| `leolock config show` | 显示当前配置内容 |
-| `leolock config validate` | 验证配置文件的完整性和权限 |
+| `show` | 显示当前配置文件内容 |
+| `validate` | 验证配置文件的完整性和权限 |
+| `gen-api-key` | 为已有配置生成 API Key（用于 API 服务鉴权，仅显示一次） |
+| `set <key> <value>` | 修改指定配置项 |
+| `add-forbidden <path>` | 添加禁止加密的路径 |
+| `remove-forbidden <path>` | 移除禁止加密的路径 |
+
+### config set 支持的键
+
+| 键 | 类型 | 示例 |
+|------|------|------|
+| `api.port` | 整数 | `leolock config set api.port 3300` |
+| `api.bind_address` | 字符串 | `leolock config set api.bind_address 0.0.0.0` |
+| `program.max_file_size` | 整数 | `leolock config set program.max_file_size 1073741824` |
+| `program.default_extension` | 字符串 | `leolock config set program.default_extension .enc` |
+| `program.key_file_path` | 字符串 | `leolock config set program.key_file_path ~/.leolock.keys` |
+| `program.preserve_original_filename` | 布尔 | `leolock config set program.preserve_original_filename true` |
+| `program.show_progress` | 布尔 | `leolock config set program.show_progress false` |
+| `program.file_format_version` | 整数 | `leolock config set program.file_format_version 3` |
+| `core.argon2_m_cost` | 整数 | `leolock config set core.argon2_m_cost 65536` |
+| `core.argon2_t_cost` | 整数 | `leolock config set core.argon2_t_cost 3` |
+| `core.argon2_p_cost` | 整数 | `leolock config set core.argon2_p_cost 2` |
+
+布尔值支持: `true`/`false`/`yes`/`no`/`1`/`0`/`on`/`off`
 
 ### Shell 补全
 

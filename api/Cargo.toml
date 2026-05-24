@@ -1,5 +1,5 @@
 [package]
-name = "leolock-server"
+name = "leolock-api"
 version.workspace = true
 edition.workspace = true
 description = "LeoLock HTTP API 服务"

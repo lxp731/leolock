@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     let has_api_key = app_state.has_api_key();
-    let addr = format!("{}:{}", config.server.bind_address, config.server.port);
+    let addr = format!("{}:{}", config.api.bind_address, config.api.port);
 
     // 公开路由（无需 Token）
     let public = Router::new()

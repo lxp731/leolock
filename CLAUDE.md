@@ -6,7 +6,7 @@
 
 ```bash
 cargo build                    # CLI + lib
-cargo build -p leolock-server  # API 服务
+cargo build -p leolock-api  # API 服务
 cargo build --workspace        # 全部
 cargo test --workspace
 cargo fmt && cargo clippy
@@ -19,12 +19,12 @@ LeoLock 是一个 Rust workspace，包含两个 crate：
 **`leolock`（根目录）** — lib crate，通过 `src/lib.rs` 导出所有模块。CLI 入口为 `src/main.rs`（clap derive）。核心模块：
 - `crypto.rs` — AES-256-GCM V3 流式加解密（1MB 分块，AAD 保护）。`CryptoManager` 同时提供基于文件的（`encrypt_file_v2`）和内存直通的（`encrypt_data_v3`）方法。
 - `fileops.rs` — `FileOps` 对外暴露两个入口：`encrypt_path_with_config` / `decrypt_path_with_config`。目录遍历使用 `walkdir`。
-- `config.rs` — `Config` 包含 4 个 TOML 段：`[program]`、`[core]`、`[auth]`、`[server]`。旧的扁平格式在加载时自动迁移。
+- `config.rs` — `Config` 包含 4 个 TOML 段：`[program]`、`[core]`、`[auth]`、`[api]`。旧的扁平格式在加载时自动迁移。
 - `password.rs` — `PasswordManager` 处理 Argon2id 哈希、keyring/env/stdin 密码来源、API Key 哈希。
 - `keymgmt.rs` — 密钥生成、保存/加载（32 字节，600 权限）、备份/恢复（JSON 格式）。
 - `errors.rs` — `BjtError` 枚举（ThisError），所有模块使用 `Result<T> = Result<T, BjtError>`。
 
-**`leolock-server`（server/）** — axum 0.7 HTTP API。依赖 `leolock` lib。
+**`leolock-api`（api/）** — axum 0.7 HTTP API。依赖 `leolock` lib。
 - `state.rs` — `AppState` 持有加密密钥（RwLock）、JWT 密钥、盐值、API Key 哈希（RwLock，支持运行时轮换）。
 - `routes/mod.rs` — 所有路由处理函数。公开：health、status、login、init。受保护（JWT）：unlock、lock、encrypt、decrypt、files/*、auth/rotate-api-key。
 - `middleware/mod.rs` — JWT 验证中间件（30 分钟过期）。
@@ -47,7 +47,7 @@ LeoLock 是一个 Rust workspace，包含两个 crate：
 [program]   # CLI 设置：forbidden_paths, max_file_size, preserve_original_filename 等
 [core]      # salt（None = 未初始化）
 [auth]      # api_key_hash（Argon2id）、jwt_secret
-[server]    # bind_address, port
+[api]       # bind_address, port
 ```
 
 `Config::is_initialized()` 检查 `self.core.salt.is_some()`。

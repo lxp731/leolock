@@ -416,7 +416,7 @@ curl -s http://127.0.0.1:3000/api/v1/config \
     "program": { "forbidden_paths": [...], "max_file_size": 10737418240, ... },
     "core": { "salt": "***", "argon2_m_cost": 19456, "argon2_t_cost": 2, "argon2_p_cost": 1 },
     "auth": { "api_key_hash": "***", "jwt_secret": "***" },
-    "server": { "bind_address": "127.0.0.1", "port": 3000 }
+    "api": { "bind_address": "127.0.0.1", "port": 3000 }
 }
 ```
 
@@ -428,13 +428,13 @@ curl -s http://127.0.0.1:3000/api/v1/config \
 PUT /api/v1/config
 ```
 
-需要认证。只能更新 `program` 和 `server` 段，不能通过 API 修改 `core` 和 `auth`。部分修改需重启服务生效。
+需要认证。只能更新 `program` 和 `api` 段，不能通过 API 修改 `core` 和 `auth`。部分修改需重启服务生效。
 
 ```bash
 curl -s -X PUT http://127.0.0.1:3000/api/v1/config \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"program": {"preserve_original_filename": true}, "server": {"port": 8443}}'
+  -d '{"program": {"preserve_original_filename": true}, "api": {"port": 8443}}'
 ```
 
 响应：

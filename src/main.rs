@@ -75,9 +75,9 @@ enum ConfigCommands {
     /// 生成 API Key（用于 API 服务鉴权）
     GenApiKey,
 
-    /// 设置配置项（server.port=3300）
+    /// 设置配置项（api.port=3300）
     Set {
-        /// 配置键，支持 server.port / program.show_progress 等
+        /// 配置键，支持 api.port / program.show_progress 等
         key: String,
         /// 配置值
         value: String,
@@ -826,12 +826,12 @@ fn handle_config_set(key: &str, value: &str) -> Result<()> {
     let mut config = Config::load()?;
 
     match key {
-        "server.port" => {
-            config.server.port = value
+        "api.port" => {
+            config.api.port = value
                 .parse()
                 .map_err(|_| BjtError::ValidationError(format!("无效的端口号: {}", value)))?;
         }
-        "server.bind_address" => config.server.bind_address = value.to_string(),
+        "api.bind_address" => config.api.bind_address = value.to_string(),
         "program.max_file_size" => {
             config.program.max_file_size = value
                 .parse()
@@ -867,7 +867,7 @@ fn handle_config_set(key: &str, value: &str) -> Result<()> {
         }
         _ => {
             return Err(BjtError::ValidationError(format!(
-                "不支持的配置项: {}\n支持: server.port, server.bind_address, program.max_file_size, \
+                "不支持的配置项: {}\n支持: api.port, api.bind_address, program.max_file_size, \
                  program.default_extension, program.key_file_path, program.preserve_original_filename, \
                  program.show_progress, program.file_format_version, core.argon2_m_cost, \
                  core.argon2_t_cost, core.argon2_p_cost",

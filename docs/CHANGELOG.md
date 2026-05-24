@@ -14,11 +14,11 @@
 - **解锁速率限制**: 每 IP 每分钟最多 5 次尝试，超限返回 429。
 - **请求日志中间件**: 记录方法/路径/状态码/耗时，不含敏感数据。
 - **错误响应脱敏**: 内部错误只返回通用消息，详情输出至 stderr。
-- **Config 结构重组**: 拆分为 `[program]/[core]/[auth]/[server]` 四个 TOML 段，旧格式自动迁移。
-- **服务端口可配**: 监听地址和端口写入 `[server]` 段，无需修改代码。
+- **Config 结构重组**: 拆分为 `[program]/[core]/[auth]/[api]` 四个 TOML 段，旧格式自动迁移。
+- **服务端口可配**: 监听地址和端口写入 `[api]` 段，无需修改代码。
 
 ### 版本 1.3.0
-- **HTTP API 服务**: 新增 `leolock-server` 子 crate，提供 REST API。
+- **HTTP API 服务**: 新增 `leolock-api` 子 crate，提供 REST API。
 - **Lock/Unlock 安全模式**: 密钥仅驻留内存，服务重启自动锁定，手动 lock 立即 zeroize 擦除。
 - **JWT 鉴权**: API Key (Argon2id 哈希存储) → 短期 JWT Token (30 分钟)。
 - **API 端点**: health / status / init / login / unlock / lock / encrypt / decrypt。

@@ -118,7 +118,7 @@ impl Default for AuthConfig {
 // ─── API 服务 ─────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerConfig {
+pub struct ApiConfig {
     /// API 服务监听地址
     #[serde(default = "default_bind_address")]
     pub bind_address: String,
@@ -128,7 +128,7 @@ pub struct ServerConfig {
     pub port: u16,
 }
 
-impl Default for ServerConfig {
+impl Default for ApiConfig {
     fn default() -> Self {
         Self {
             bind_address: default_bind_address(),
@@ -151,7 +151,7 @@ pub struct Config {
     pub auth: AuthConfig,
 
     #[serde(default)]
-    pub server: ServerConfig,
+    pub api: ApiConfig,
 }
 
 impl Default for Config {
@@ -160,7 +160,7 @@ impl Default for Config {
             program: ProgramConfig::default(),
             core: CoreConfig::default(),
             auth: AuthConfig::default(),
-            server: ServerConfig::default(),
+            api: ApiConfig::default(),
         }
     }
 }
@@ -226,7 +226,7 @@ impl From<FlatConfig> for Config {
                 api_key_hash: f.api_key_hash,
                 jwt_secret: f.jwt_secret,
             },
-            server: ServerConfig {
+            api: ApiConfig {
                 bind_address: f.bind_address.unwrap_or_else(default_bind_address),
                 port: f.port.unwrap_or_else(default_port),
             },
@@ -302,7 +302,7 @@ impl Config {
                 if !content.contains("[program]")
                     && !content.contains("[core]")
                     && !content.contains("[auth]")
-                    && !content.contains("[server]")
+                    && !content.contains("[api]")
                 {
                     if let Ok(flat) = toml::from_str::<FlatConfig>(&content) {
                         let config: Config = flat.into();

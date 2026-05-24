@@ -97,7 +97,7 @@ leolock list . --show-original
 
 ```bash
 # 启动服务
-leolock-server
+leolock-api
 
 # 登录
 curl -X POST http://127.0.0.1:3000/api/v1/auth/login \
@@ -149,7 +149,7 @@ leolock completions zsh -o ~/.zsh/completions/
 - **文件权限保护**: 自动设置配置文件权限为 600
 
 ### 安全限制
-- **危险路径保护**: 默认禁止加密16个系统目录
+- **危险路径保护**: 默认禁止加密 17 个系统目录
 - **文件大小限制**: 默认10GB，防止意外加密大文件
 - **密码强度**: 至少8位，包含数字和字母
 - **运行时检查**: 自动检测配置文件权限问题
@@ -177,7 +177,7 @@ leolock completions zsh -o ~/.zsh/completions/
 ## 📝 版本历史
 
 ### 版本 1.5.0 (当前)
-- **HTTP API 服务**: 新增 `leolock-server`，提供 REST API 远程加解密。
+- **HTTP API 服务**: 新增 `leolock-api`，提供 REST API 远程加解密。
 - **Lock/Unlock 模式**: 密钥仅驻留内存，重启自动锁定，用完即擦。
 - **JWT 鉴权**: API Key → 短期 Token，Argon2id 哈希存储。
 - **文件管理 API**: 列出/查看/下载/删除加密文件。

@@ -732,7 +732,7 @@ pub struct ConfigResponse {
     program: ProgramConfigView,
     core: CoreConfigView,
     auth: AuthConfigView,
-    server: ServerConfigView,
+    api: ApiConfigView,
 }
 
 #[derive(Serialize)]
@@ -761,7 +761,7 @@ struct AuthConfigView {
 }
 
 #[derive(Serialize)]
-struct ServerConfigView {
+struct ApiConfigView {
     bind_address: String,
     port: u16,
 }
@@ -769,7 +769,7 @@ struct ServerConfigView {
 #[derive(Deserialize)]
 pub struct ConfigUpdateRequest {
     pub program: Option<ProgramUpdate>,
-    pub server: Option<ServerUpdate>,
+    pub api: Option<ApiUpdate>,
 }
 
 #[derive(Deserialize)]
@@ -784,7 +784,7 @@ pub(crate) struct ProgramUpdate {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct ServerUpdate {
+pub(crate) struct ApiUpdate {
     pub(crate) bind_address: Option<String>,
     pub(crate) port: Option<u16>,
 }
@@ -822,15 +822,15 @@ pub async fn get_config() -> Result<Json<ConfigResponse>, AppError> {
             api_key_hash: mask(&config.auth.api_key_hash),
             jwt_secret: mask(&config.auth.jwt_secret),
         },
-        server: ServerConfigView {
-            bind_address: config.server.bind_address,
-            port: config.server.port,
+        api: ApiConfigView {
+            bind_address: config.api.bind_address,
+            port: config.api.port,
         },
     }))
 }
 
 /// PUT /api/v1/config
-/// 更新 [program] 和 [server] 段，不允许修改 [core] 和 [auth]
+/// 更新 [program] 和 [api] 段，不允许修改 [core] 和 [auth]
 pub async fn update_config(
     Json(body): Json<ConfigUpdateRequest>,
 ) -> Result<Json<MessageResponse>, AppError> {
@@ -860,12 +860,12 @@ pub async fn update_config(
         }
     }
 
-    if let Some(s) = body.server {
+    if let Some(s) = body.api {
         if let Some(v) = s.bind_address {
-            config.server.bind_address = v;
+            config.api.bind_address = v;
         }
         if let Some(v) = s.port {
-            config.server.port = v;
+            config.api.port = v;
         }
     }
 

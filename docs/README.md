@@ -5,6 +5,7 @@
 ### 核心文档
 - [INSTALLATION.md](INSTALLATION.md) - 详细安装指南
 - [COMMANDS.md](COMMANDS.md) - 完整命令参考
+- [API.md](API.md) - HTTP API 完整参考
 - [SECURITY.md](SECURITY.md) - 安全特性文档
 - [CONFIGURATION.md](CONFIGURATION.md) - 配置文件说明
 
@@ -42,11 +43,13 @@ docs/
 ├── README.md              # 本文档（文档索引）
 ├── INSTALLATION.md        # 详细安装指南
 ├── COMMANDS.md           # 完整命令参考
+├── API.md                # HTTP API 完整参考
 ├── SECURITY.md           # 安全特性文档
 ├── CONFIGURATION.md      # 配置文件说明
 ├── WARNINGS.md           # 重要警告
 ├── STRUCTURE.md          # 文件结构说明
-└── CHANGELOG.md          # 版本更新历史
+├── CHANGELOG.md          # 版本更新历史
+└── API_PLAN.md           # API 设计文档（开发用）
 ```
 
 ## 🔄 文档更新
@@ -66,5 +69,5 @@ docs/
 
 ---
 
-**最后更新:** 2026-03-15  
+**最后更新:** 2026-05-25  
 **维护者:** Burgess Leo

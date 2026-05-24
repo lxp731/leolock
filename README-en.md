@@ -1,19 +1,18 @@
 # LeoLock 🔒
 
-A secure file encryption/decryption command-line tool using AES-256-GCM encryption and Argon2id password hashing.
+A secure file encryption/decryption tool with CLI and HTTP API, using AES-256-GCM authenticated encryption and Argon2id password hashing.
 
 ## ✨ Features
 
-- **Military-grade encryption**: AES-256-GCM authenticated encryption, now with **AAD (Additional Authenticated Data)** to protect headers from tampering.
+- **Military-grade encryption**: AES-256-GCM authenticated encryption + AAD metadata protection to prevent header tampering.
+- **HTTP API service**: REST API for remote encryption/decryption, file management, and JWT authentication.
 - **Secure password hashing**: Argon2id resistant to GPU/ASIC attacks.
-- **Zero Secrets in Memory**: Integrated `zeroize` technology ensures passwords and keys are cleared from memory immediately after use.
-- **Extreme Performance**: Refactored with streaming I/O; encrypts a 3GB file in ~14 seconds (benchmarked) with minimal memory footprint.
-- **Atomic Operations**: "Write-then-swap" mechanism ensures original data remains intact even if a crash or power failure occurs during encryption.
-- **Dual Encryption Modes**: Supports filename encryption (Full mode) or content-only encryption (Fast mode).
-- **Recursive Processing**: Supports batch encryption of files and folders.
+- **Zero Secrets in Memory**: `zeroize` technology ensures passwords and keys are erased immediately after use. API service auto-locks on restart.
+- **Extreme Performance**: Streaming I/O, ~14s for 3GB files; API endpoints use in-memory processing with zero disk I/O.
+- **Atomic Operations**: "Write-then-swap" mechanism prevents data corruption from crashes.
+- **Dual Encryption Modes**: Filename encryption (Full mode) or content-only (Fast mode).
+- **Recursive Processing**: Batch encryption of files and directories.
 - **Backup Recovery**: Automatically creates an encrypted key backup during initialization.
-- **Tab Completion**: Supports Bash, Zsh, Fish, PowerShell, Elvish.
-- **Runtime Security Checks**: Automatically detects config file permissions (600 required).
 
 ## 🚀 Quick Start
 
@@ -74,19 +73,49 @@ leolock list . --show-original
 | Command | Description |
 |------|------|
 | `leolock init` | Initialize the tool |
-| `leolock encrypt <path>` | Encrypt file or folder |
-| `leolock decrypt <path>` | Decrypt file or folder |
+| `leolock encrypt <path>` | Encrypt file or directory |
+| `leolock decrypt <path>` | Decrypt file or directory |
 | `leolock list <path>` | List encrypted file information |
 | `leolock recover --backup <file>` | Restore key from backup file |
 | `leolock completions <shell>` | Generate shell completion scripts |
+| `leolock config show` | Show current configuration |
+| `leolock config validate` | Validate configuration file |
+| `leolock config set <key> <value>` | Modify a configuration item |
+| `leolock config gen-api-key` | Generate API Key |
+| `leolock config add-forbidden <path>` | Add forbidden path |
+| `leolock config remove-forbidden <path>` | Remove forbidden path |
 
 **Common options:**
-- `-k, --keep`: Keep source file (do not delete)
-- `-F, --fast`: Fast mode (do not encrypt filename)
+- `-k, --keep`: Keep source file
+- `-F, --fast`: Fast mode (skip filename encryption)
 - `--show-original`: Show original filename (requires password)
 - `--sort-by-size <asc/desc>`: Sort by file size
+- `--format <table/json/simple>`: Output format for list command
+- `--env-pass <var>`: Load password from environment variable
+- `--keyring`: Load password from system keyring
+- `--stdin`: Load password from stdin
+
+### HTTP API
+
+```bash
+# Start the server
+leolock-api
+
+# Login
+curl -X POST http://127.0.0.1:3000/api/v1/auth/login \
+  -H 'Content-Type: application/json' -d '{"api_key": "..."}'
+
+# Encrypt
+curl -X POST http://127.0.0.1:3000/api/v1/encrypt \
+  -H "Authorization: Bearer $TOKEN" -F "file=@doc.pdf" -o doc.leo
+
+# Decrypt
+curl -X POST http://127.0.0.1:3000/api/v1/decrypt \
+  -H "Authorization: Bearer $TOKEN" -F "file=@doc.leo" -o doc.pdf
+```
 
 **Complete command reference:** See [docs/COMMANDS.md](docs/COMMANDS.md)
+**Complete API reference:** See [docs/API.md](docs/API.md)
 
 ## 📦 Installation Options
 
@@ -121,7 +150,7 @@ leolock completions zsh -o ~/.zsh/completions/
 - **File permission protection**: Automatically sets configuration file permissions to 600
 
 ### Security Restrictions
-- **Dangerous path protection**: Default prohibits encryption of 16 system directories
+- **Dangerous path protection**: Default prohibits encryption of 17 system directories
 - **File size limit**: Default 10GB, prevents accidental encryption of large files
 - **Password strength**: Minimum 8 characters, containing numbers and letters
 - **Runtime checks**: Automatically detects configuration file permission issues
@@ -147,11 +176,30 @@ leolock completions zsh -o ~/.zsh/completions/
 
 ## 📝 Version History
 
-### Version 1.2.0 (Current)
-- **Multithreading Acceleration**: Introduced parallel processing with `rayon` for directory recursion, significantly boosting batch encryption efficiency.
-- **Enhanced Experience**: Integrated elegant progress bars (`indicatif`) and real-time password strength evaluation for a better interactive experience.
-- **Metadata Padding**: Added metadata padding to eliminate potential privacy risks from filename length leakage.
-- **Advanced Password Policies**: Added support for flexible password loading from environment variables (`--env-pass`), system keyring (`--keyring`), or standard input (`--stdin`).
+### Version 1.5.0 (Current)
+- **Dynamic Argon2id Parameters**: Custom m_cost/t_cost/p_cost in `[core]` section, V4 file header stores parameters.
+- **Multi-format list output**: `leolock list --format json|simple|table`.
+- **Config API**: `GET /api/v1/config` (sensitive fields masked), `PUT /api/v1/config` for runtime updates.
+- **CLI config management**: `leolock config set <key> <value>`, `add-forbidden` / `remove-forbidden`.
+
+### Version 1.4.0
+- **Stream encryption endpoints**: `encrypt-stream` / `decrypt-stream` for raw binary body.
+- **File management API**: List/view/download/delete encrypted files with pagination.
+- **API Key rotation**: `POST /api/v1/auth/rotate-api-key` with password verification.
+- **Unlock rate limiting**: Max 5 attempts per IP per minute (HTTP 429).
+- **Request logging middleware**: Method/path/status/duration, no sensitive data.
+- **Error response sanitization**: Internal errors return generic messages, details to stderr.
+
+### Version 1.3.0
+- **HTTP API service**: New `leolock-api` sub-crate providing REST API.
+- **Lock/Unlock security mode**: Key only in memory, auto-lock on restart.
+- **JWT authentication**: API Key (Argon2id hash) → short-lived JWT (30 min).
+- **In-memory passthrough**: API encryption/decryption with zero temp files.
+
+### Version 1.2.0
+- **Multithreading**: `rayon` parallel processing for directory recursion.
+- **Enhanced UX**: Progress bars (`indicatif`) + real-time password strength evaluation.
+- **Advanced password policies**: Environment variable / keyring / stdin support.
 
 ### Version 1.1.0
 - **Performance Breakthrough**: Refactored with streaming encryption, significantly boosting speed (14s/3GB).
@@ -182,7 +230,7 @@ If you have questions, please:
 
 ---
 
-**Last Updated:** 2026-04-30  
-**Project Status:** ✅ Hardened, High Performance, Production Ready
+**Last Updated:** 2026-05-25  
+**Project Status:** ✅ CLI v1.5.0 + API Service, Stable
 
 **Security Note:** Regularly backup important data, encryption is not insurance against data loss.
