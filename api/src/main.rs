@@ -59,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/files/get", get(routes::get_file))
         .route("/api/v1/files/download", get(routes::download_file))
         .route("/api/v1/files/delete", delete(routes::delete_file))
+        .route("/api/v1/stats", get(routes::stats))
         .layer(axum_mw::from_fn_with_state(
             app_state.clone(),
             middleware::auth_middleware,

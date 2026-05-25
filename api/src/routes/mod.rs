@@ -878,3 +878,74 @@ pub async fn update_config(
         message: "✅ 配置已更新（部分修改需重启服务生效）".into(),
     }))
 }
+
+// ─── 统计信息 ──────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub(crate) struct StatsQuery {
+    path: String,
+}
+
+#[derive(Serialize)]
+pub(crate) struct StatsResponse {
+    path: String,
+    total_files: usize,
+    encrypted_files: usize,
+    total_encrypted_size: u64,
+    decryptable_count: usize,
+    versions: std::collections::HashMap<String, usize>,
+}
+
+/// GET /api/v1/stats?path=/data
+pub async fn stats(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<StatsQuery>,
+) -> Result<Json<StatsResponse>, AppError> {
+    let dir = PathBuf::from(&query.path);
+    if !dir.is_dir() {
+        return Err(AppError::BadRequest(format!(
+            "目录不存在: {}",
+            dir.display()
+        )));
+    }
+
+    let key = state.get_key();
+    let mut total_files = 0usize;
+    let mut encrypted_files = 0usize;
+    let mut total_encrypted_size = 0u64;
+    let mut decryptable_count = 0usize;
+    let mut versions: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            total_files += 1;
+
+            let is_leo = path.extension().map_or(false, |e| e == "leo");
+            if !is_leo {
+                continue;
+            }
+            encrypted_files += 1;
+
+            if let Ok(info) = CryptoManager::get_file_info(&path, key.as_ref()) {
+                total_encrypted_size += info.encrypted_size;
+                if info.decryptable {
+                    decryptable_count += 1;
+                }
+                *versions.entry(format!("v{}", info.version)).or_insert(0) += 1;
+            }
+        }
+    }
+
+    Ok(Json(StatsResponse {
+        path: query.path,
+        total_files,
+        encrypted_files,
+        total_encrypted_size,
+        decryptable_count,
+        versions,
+    }))
+}

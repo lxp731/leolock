@@ -17,7 +17,7 @@ cargo fmt && cargo clippy
 LeoLock 是一个 Rust workspace，包含两个 crate：
 
 **`leolock`（根目录）** — lib crate，通过 `src/lib.rs` 导出所有模块。CLI 入口为 `src/main.rs`（clap derive）。核心模块：
-- `crypto.rs` — AES-256-GCM V3 流式加解密（1MB 分块，AAD 保护）。`CryptoManager` 同时提供基于文件的（`encrypt_file_v2`）和内存直通的（`encrypt_data_v3`）方法。
+- `crypto.rs` — AES-256-GCM V4 流式加解密（1MB 分块，AAD 保护）。`CryptoManager` 同时提供基于文件的（`encrypt_file_v2`）和内存直通的（`encrypt_data_v3`）方法。
 - `fileops.rs` — `FileOps` 对外暴露两个入口：`encrypt_path_with_config` / `decrypt_path_with_config`。目录遍历使用 `walkdir`。
 - `config.rs` — `Config` 包含 4 个 TOML 段：`[program]`、`[core]`、`[auth]`、`[api]`。旧的扁平格式在加载时自动迁移。
 - `password.rs` — `PasswordManager` 处理 Argon2id 哈希、keyring/env/stdin 密码来源、API Key 哈希。
@@ -33,7 +33,7 @@ LeoLock 是一个 Rust workspace，包含两个 crate：
 
 **Config 访问**：`Config::load()` 一次性读取 TOML。服务启动时将字段缓存到 `AppState`——路由处理函数**不得**再次调用 `Config::load()`。应通过 `state.salt`、`state.is_initialized` 等访问。
 
-**错误处理**：路由返回 `Result<T, AppError>`。`AppError` 映射到 HTTP 状态码：`Locked` → 423，`NotInitialized` → 412，`BadRequest` → 400，`CryptoError` → 400，`Internal` → 500。`BjtError` 和 `std::io::Error` 通过 `From` 自动转换。
+**错误处理**：路由返回 `Result<T, AppError>`。`AppError` 映射到 HTTP 状态码：`Locked` → 423，`NotInitialized` → 412，`BadRequest` → 400，`CryptoError` → 400，`RateLimited` → 429，`Internal` → 500。`BjtError` 和 `std::io::Error` 通过 `From` 自动转换。
 
 **API 加解密**：使用 `CryptoManager::encrypt_data_v3(data, filename, key)` 和 `decrypt_data_v3(data, key)` 进行内存操作——禁止写临时文件。
 
@@ -45,7 +45,7 @@ LeoLock 是一个 Rust workspace，包含两个 crate：
 
 ```toml
 [program]   # CLI 设置：forbidden_paths, max_file_size, preserve_original_filename 等
-[core]      # salt（None = 未初始化）
+[core]      # salt（None = 未初始化）、argon2_m_cost/t_cost/p_cost
 [auth]      # api_key_hash（Argon2id）、jwt_secret
 [api]       # bind_address, port
 ```
@@ -55,6 +55,17 @@ LeoLock 是一个 Rust workspace，包含两个 crate：
 ## 服务 Lock/Unlock 机制
 
 服务启动时处于 LOCKED 状态。`POST /unlock` 通过 Argon2id 从密码 + 盐值派生 AES 密钥，存入 `RwLock<Option<Zeroizing<[u8;32]>>>`。`POST /lock` 置为 `None`，drop 触发 zeroize。encrypt/decrypt/download/delete 在锁定时返回 423。list/get 不受影响。
+
+## 文件格式
+
+| 版本 | 魔数 | 特性 |
+|------|------|------|
+| V1 | 无 | 旧版，一次性加密 |
+| V2 | LEO2 | 文件名加密 |
+| V3 | LEO3 | 流式 + AAD 保护 |
+| V4 | LEO3(ver=4) | V3 + Argon2id 参数存储（12 字节） |
+
+V4 是当前默认格式。加密时参数从 `[core]` 段读取并写入文件头；解密时从文件头恢复参数。V1-V3 自动使用默认参数 (19456/2/1)。
 
 ## 应该做的事
 
