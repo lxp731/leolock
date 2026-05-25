@@ -444,6 +444,109 @@ curl -s -X PUT http://127.0.0.1:3000/api/v1/config \
 
 ---
 
+### 统计信息
+
+```bash
+GET /api/v1/stats
+```
+
+需要认证。扫描目录下 `.leo` 文件，返回文件数、总大小、版本分布等聚合统计。
+
+```bash
+curl -s "http://127.0.0.1:3000/api/v1/stats?path=/data/encrypted" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+响应：
+```json
+{
+  "path": "/tmp",
+  "total_files": 37,
+  "encrypted_files": 7,
+  "total_encrypted_size": 780,
+  "decryptable_count": 5,
+  "versions": { "v4": 3, "v3": 2, "v1": 2 }
+}
+```
+
+---
+
+### 密钥轮换
+
+```bash
+POST /api/v1/auth/rotate-key
+```
+
+需要认证。用密码验证身份后生成新盐值 + 新主密钥。可选 `re_encrypt_path` 参数批量重加密已有文件。
+
+```bash
+# 仅轮换密钥
+curl -s -X POST http://127.0.0.1:3000/api/v1/auth/rotate-key \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"password": "你的密码"}'
+
+# 轮换 + 重加密目录下所有 .leo 文件
+curl -s -X POST http://127.0.0.1:3000/api/v1/auth/rotate-key \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"password": "你的密码", "re_encrypt_path": "/data/encrypted"}'
+```
+
+响应：
+```json
+{
+  "status": "rotated",
+  "message": "🔑 主密钥已轮换，3 个文件已重加密",
+  "re_encrypted": 3,
+  "re_encrypt_errors": 0
+}
+```
+
+> 重加密是逐文件原子操作（解密→加密→删旧），每文件用不同密钥加密的会报错跳过。不需要重加密时可不传 `re_encrypt_path`。
+
+---
+
+### 下载密钥备份
+
+```bash
+POST /api/v1/backup
+```
+
+需要认证 + 服务已解锁。生成加密密钥备份文件（`.enc`）并返回。可反复调用，每次生成带时间戳的新文件。
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/api/v1/backup \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"password": "你的密码"}' \
+  -o leolock_backup_$(date +%Y%m%d).enc
+```
+
+---
+
+### 从备份恢复
+
+```bash
+POST /api/v1/recover
+```
+
+需要认证。上传备份文件 + 创建备份时的密码，恢复主密钥并即时生效。
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/api/v1/recover \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "backup=@leolock_backup.enc" \
+  -F "password=创建备份时的密码"
+```
+
+响应：
+```json
+{ "status": "recovered", "message": "✅ 密钥已从备份恢复，服务已解锁" }
+```
+
+---
+
 ## 完整调用流程
 
 ```bash
