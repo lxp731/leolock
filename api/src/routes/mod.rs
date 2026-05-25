@@ -190,8 +190,7 @@ pub async fn rotate_api_key(
 
     // 验证密码
     let salt_b64 = state
-        .salt
-        .as_ref()
+        .get_salt()
         .ok_or_else(|| AppError::BadRequest("配置中缺少盐值".into()))?;
 
     use base64::Engine;
@@ -290,8 +289,7 @@ pub async fn unlock(
     }
 
     let salt_b64 = state
-        .salt
-        .as_ref()
+        .get_salt()
         .ok_or_else(|| AppError::BadRequest("配置中缺少盐值".into()))?;
 
     use base64::Engine;
@@ -947,5 +945,143 @@ pub async fn stats(
         total_encrypted_size,
         decryptable_count,
         versions,
+    }))
+}
+
+// ─── 密钥轮换 ──────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub(crate) struct RotateKeyRequest {
+    /// 当前密码（用于验证身份）
+    password: String,
+    /// 可选：重新加密此目录下的所有 .leo 文件
+    re_encrypt_path: Option<String>,
+}
+
+impl RotateKeyRequest {
+    fn into_password(self) -> Zeroizing<String> {
+        Zeroizing::new(self.password)
+    }
+}
+
+#[derive(Serialize)]
+pub(crate) struct RotateKeyResponse {
+    status: String,
+    message: String,
+    re_encrypted: usize,
+    re_encrypt_errors: usize,
+}
+
+/// POST /api/v1/auth/rotate-key
+/// 生成新盐值 + 主密钥，可选批量重加密已有文件
+pub async fn rotate_key(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<RotateKeyRequest>,
+) -> Result<Json<RotateKeyResponse>, AppError> {
+    let re_encrypt_path = body.re_encrypt_path.clone();
+    let password = body.into_password();
+
+    // 验证当前密码
+    let old_salt_b64 = state
+        .get_salt()
+        .ok_or_else(|| AppError::BadRequest("配置中缺少盐值".into()))?;
+
+    use base64::Engine;
+    let old_salt = base64::engine::general_purpose::STANDARD
+        .decode(&old_salt_b64)
+        .map_err(|e| AppError::BadRequest(format!("盐值解码失败: {}", e)))?;
+
+    let old_key = CryptoManager::derive_key_from_password(
+        &password,
+        &old_salt,
+        state.argon2_m,
+        state.argon2_t,
+        state.argon2_p,
+    )
+    .map_err(|e| AppError::CryptoError(format!("密码错误: {}", e)))?;
+
+    // 生成新盐值 + 密钥
+    let mut new_salt = [0u8; 16];
+    getrandom::getrandom(&mut new_salt)
+        .map_err(|e| AppError::CryptoError(format!("生成盐值失败: {}", e)))?;
+    let new_salt_b64 = base64::engine::general_purpose::STANDARD.encode(new_salt);
+
+    let new_key = CryptoManager::derive_key_from_password(
+        &password,
+        &new_salt,
+        state.argon2_m,
+        state.argon2_t,
+        state.argon2_p,
+    )
+    .map_err(|e| AppError::CryptoError(format!("密钥派生失败: {}", e)))?;
+
+    // 保存到磁盘
+    leolock::keymgmt::KeyManager::save_key(&new_key)?;
+
+    let mut config = leolock::config::Config::load().unwrap_or_default();
+    config.core.salt = Some(new_salt_b64.clone());
+    config
+        .save()
+        .map_err(|e| AppError::Internal(format!("保存配置失败: {}", e)))?;
+
+    // 可选批量重加密
+    let mut re_encrypted = 0usize;
+    let mut re_encrypt_errors = 0usize;
+
+    if let Some(ref path_str) = re_encrypt_path {
+        let dir = PathBuf::from(path_str);
+        if dir.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.flatten() {
+                    let file_path = entry.path();
+                    if !file_path.is_file() || !file_path.extension().map_or(false, |e| e == "leo")
+                    {
+                        continue;
+                    }
+                    match CryptoManager::decrypt_file_v2(&file_path, &old_key, true) {
+                        Ok(decrypted_path) => {
+                            match CryptoManager::encrypt_file_v2(
+                                &decrypted_path,
+                                &new_key,
+                                false,
+                                true,
+                            ) {
+                                Ok(_) => {
+                                    // 删除解密出的中间文件
+                                    let _ = std::fs::remove_file(&decrypted_path);
+                                    // 删除旧的加密文件
+                                    let _ = leolock::utils::Utils::secure_delete_file(&file_path);
+                                    re_encrypted += 1;
+                                }
+                                Err(_) => {
+                                    re_encrypt_errors += 1;
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            re_encrypt_errors += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 更新运行时状态（新密钥即时生效）
+    state.update_salt(new_salt_b64);
+    state.unlock(new_key);
+
+    Ok(Json(RotateKeyResponse {
+        status: "rotated".into(),
+        message: format!(
+            "🔑 主密钥已轮换{}",
+            if re_encrypted > 0 {
+                format!("，{} 个文件已重加密", re_encrypted)
+            } else {
+                String::new()
+            }
+        ),
+        re_encrypted,
+        re_encrypt_errors,
     }))
 }

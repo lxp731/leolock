@@ -12,7 +12,7 @@ const UNLOCK_RATE_WINDOW: u64 = 60;
 pub struct AppState {
     pub encryption_key: RwLock<Option<Zeroizing<[u8; 32]>>>,
     pub jwt_secret: Option<String>,
-    pub salt: Option<String>,
+    salt: RwLock<Option<String>>,
     api_key_hash: RwLock<Option<String>>,
     pub is_initialized: bool,
     pub argon2_m: u32,
@@ -35,7 +35,7 @@ impl AppState {
         Self {
             encryption_key: RwLock::new(None),
             jwt_secret,
-            salt,
+            salt: RwLock::new(salt),
             api_key_hash: RwLock::new(api_key_hash),
             is_initialized,
             argon2_m,
@@ -43,6 +43,15 @@ impl AppState {
             argon2_p,
             unlock_attempts: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn get_salt(&self) -> Option<String> {
+        self.salt.read().unwrap().clone()
+    }
+
+    pub fn update_salt(&self, new_salt: String) {
+        let mut guard = self.salt.write().unwrap();
+        *guard = Some(new_salt);
     }
 
     pub fn is_unlocked(&self) -> bool {
