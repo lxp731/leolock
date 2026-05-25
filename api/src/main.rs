@@ -46,6 +46,8 @@ async fn main() -> anyhow::Result<()> {
     let protected = Router::new()
         .route("/api/v1/auth/rotate-api-key", post(routes::rotate_api_key))
         .route("/api/v1/auth/rotate-key", post(routes::rotate_key))
+        .route("/api/v1/backup", post(routes::backup))
+        .route("/api/v1/recover", post(routes::recover))
         .route("/api/v1/unlock", post(routes::unlock))
         .route("/api/v1/lock", post(routes::lock))
         .route("/api/v1/encrypt", post(routes::encrypt))

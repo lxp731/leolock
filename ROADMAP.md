@@ -88,7 +88,7 @@ LeoLock 致力于成为 Linux/Unix 环境下最安全、最易用、且高性能
 
 - [ ] **临时分享链接**: `POST /api/v1/share` 创建一次性/限时解密链接，支持密码保护和下载次数限制
 - [x] **密钥轮换**: `POST /api/v1/auth/rotate-key` — 重新生成主密钥，可选批量重加密已有文件
-- [ ] `POST /api/v1/backup` / `POST /api/v1/recover` — 通过 API 创建/恢复密钥备份
+- [x] `POST /api/v1/backup` / `POST /api/v1/recover` — 通过 API 创建/恢复密钥备份
 - [x] `GET /api/v1/stats` — 统计信息（文件数/总大小/版本分布/可解密数）
 
 ---

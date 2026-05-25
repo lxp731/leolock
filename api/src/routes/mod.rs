@@ -1085,3 +1085,125 @@ pub async fn rotate_key(
         re_encrypt_errors,
     }))
 }
+
+// ─── 备份下载 ──────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub(crate) struct BackupRequest {
+    password: String,
+}
+
+impl BackupRequest {
+    fn into_password(self) -> Zeroizing<String> {
+        Zeroizing::new(self.password)
+    }
+}
+
+/// POST /api/v1/backup
+/// 生成加密密钥备份文件并返回（可反复调用）
+pub async fn backup(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<BackupRequest>,
+) -> Result<Response, AppError> {
+    let password = body.into_password();
+    let key = state.get_key().ok_or(AppError::Locked)?;
+
+    // 验证密码
+    let salt_b64 = state
+        .get_salt()
+        .ok_or_else(|| AppError::BadRequest("配置中缺少盐值".into()))?;
+    use base64::Engine;
+    let salt = base64::engine::general_purpose::STANDARD
+        .decode(&salt_b64)
+        .map_err(|e| AppError::BadRequest(format!("盐值解码失败: {}", e)))?;
+    CryptoManager::derive_key_from_password(
+        &password,
+        &salt,
+        state.argon2_m,
+        state.argon2_t,
+        state.argon2_p,
+    )
+    .map_err(|e| AppError::CryptoError(format!("密码错误: {}", e)))?;
+
+    // 生成备份到临时文件
+    let key_z = zeroize::Zeroizing::new(key);
+    let backup_path = leolock::keymgmt::KeyManager::create_backup(&key_z, &password)
+        .map_err(|e| AppError::Internal(format!("创建备份失败: {}", e)))?;
+
+    let data = std::fs::read(&backup_path)
+        .map_err(|e| AppError::Internal(format!("读取备份失败: {}", e)))?;
+    let _ = std::fs::remove_file(&backup_path);
+
+    let filename = backup_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", filename),
+        )
+        .body(Body::from(data))
+        .unwrap())
+}
+
+// ─── 备份恢复 ──────────────────────────────────────────────────
+
+/// POST /api/v1/recover
+/// multipart: 备份文件 + password 字段
+pub async fn recover(
+    State(state): State<Arc<AppState>>,
+    mut multipart: Multipart,
+) -> Result<Json<MessageResponse>, AppError> {
+    let mut backup_data: Option<Vec<u8>> = None;
+    let mut password: Option<String> = None;
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        match field.name().unwrap_or("") {
+            "backup" => {
+                backup_data = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|e| AppError::BadRequest(format!("读取文件失败: {}", e)))?
+                        .to_vec(),
+                );
+            }
+            "password" => {
+                password = Some(
+                    field
+                        .text()
+                        .await
+                        .map_err(|e| AppError::BadRequest(format!("读取密码失败: {}", e)))?,
+                );
+            }
+            _ => {}
+        }
+    }
+
+    let backup_data = backup_data.ok_or_else(|| AppError::BadRequest("缺少 backup 字段".into()))?;
+    let password =
+        Zeroizing::new(password.ok_or_else(|| AppError::BadRequest("缺少 password 字段".into()))?);
+
+    // 写备份到临时文件
+    let tmp_dir =
+        tempfile::tempdir().map_err(|e| AppError::Internal(format!("创建临时目录失败: {}", e)))?;
+    let tmp_path = tmp_dir.path().join("backup.enc");
+    std::fs::write(&tmp_path, &backup_data)
+        .map_err(|e| AppError::Internal(format!("写入临时文件失败: {}", e)))?;
+
+    let recovered_key = leolock::keymgmt::KeyManager::recover_from_backup(&tmp_path, &password)
+        .map_err(|e| AppError::CryptoError(format!("恢复失败: {}", e)))?;
+
+    // 保存恢复的密钥并更新运行状态
+    leolock::keymgmt::KeyManager::save_key(&recovered_key)?;
+    state.unlock(recovered_key);
+
+    Ok(Json(MessageResponse {
+        status: "recovered".into(),
+        message: "✅ 密钥已从备份恢复，服务已解锁".into(),
+    }))
+}
