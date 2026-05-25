@@ -11,7 +11,7 @@ LeoLock 致力于成为 Linux/Unix 环境下最安全、最易用、且高性能
 
 ## 已完成
 
-### 阶段 1: 核心加密 (v1.0.0 → v1.1.0) — ✅
+### 阶段 1: 核心加密 — ✅
 
 - AES-256-GCM 流式加解密（V3 格式：1MB chunk + AAD 元数据保护）
 - Argon2id 密码派生 (m=19456, t=2, p=1)
@@ -19,7 +19,7 @@ LeoLock 致力于成为 Linux/Unix 环境下最安全、最易用、且高性能
 - Zeroize 全链路内存擦除，危险路径保护
 - 密钥生成/保存/备份/恢复
 
-### 阶段 2: 并行化与交互增强 (v1.2.0) — ✅
+### 阶段 2: 并行化与交互增强 — ✅
 
 - rayon 多线程并行加密目录
 - 元数据 padding 防文件名长度泄露
@@ -27,7 +27,7 @@ LeoLock 致力于成为 Linux/Unix 环境下最安全、最易用、且高性能
 - 密码强度实时评估，indicatif 进度条
 - `list` 命令，shell 补全脚本生成
 
-### 阶段 3: API 服务基础 (v1.3.0) — ✅
+### 阶段 3: API 服务基础 — ✅
 
 - axum HTTP 服务（默认 bind 127.0.0.1:3000）
 - Lock/Unlock 模式：密钥仅驻留内存，重启自动锁定
@@ -35,46 +35,12 @@ LeoLock 致力于成为 Linux/Unix 环境下最安全、最易用、且高性能
 - 内存直通加解密（multipart → 内存 V3 加解密 → 返回，无临时文件）
 - API 初始化（`POST /api/v1/init`），Config 缓存到 AppState
 - 请求体大小限制 (2GB) + 并发控制 (8)
-
-**已实现端点:**
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/v1/health` | 健康检查 |
-| GET | `/api/v1/status` | 服务状态（是否初始化/锁定） |
-| POST | `/api/v1/auth/login` | API Key → JWT Token |
-| POST | `/api/v1/init` | 初始化（首次设置密码、生成密钥） |
-| POST | `/api/v1/unlock` | 密码解锁（派生密钥驻内存） |
-| POST | `/api/v1/lock` | 锁定（擦除内存密钥） |
-| POST | `/api/v1/encrypt` | multipart 上传 → 加密 → 返回 .leo |
-| POST | `/api/v1/decrypt` | multipart 上传 → 解密 → 返回原文 |
-| POST | `/api/v1/auth/rotate-api-key` | 轮换 API Key（密码验证，旧 Key 即时失效） |
-| GET | `/api/v1/files` | 列出加密文件（分页/排序） |
-| GET | `/api/v1/files/get` | 单个文件详情 |
-| GET | `/api/v1/files/download` | 原地解密下载 |
-| DELETE | `/api/v1/files/delete` | 安全删除加密文件 |
-| POST | `/api/v1/encrypt-stream` | 原始二进制 body 加密 |
-| POST | `/api/v1/decrypt-stream` | 原始二进制 body 解密 |
+- 流式加解密：encrypt-stream / decrypt-stream（原始二进制 body）
+- unlock 速率限制（每 IP 5次/分钟，429）、请求日志中间件、错误脱敏
 
 ---
 
-## 当前重点：安全加固 (v1.4.0)
-
-### 流式加解密 — ✅
-
-- [x] `POST /api/v1/encrypt-stream` — 原始二进制 body + X-Filename 头
-- [x] `POST /api/v1/decrypt-stream` — 原始二进制 V3 body 解密
-
-### 安全加固 — ✅
-
-- [x] unlock 端点速率限制（每 IP 每分钟 5 次，429 响应）
-- [x] 请求日志中间件（方法/路径/状态/耗时，不含敏感数据）
-- [x] 错误响应脱敏（AppError::Internal 返回通用消息，详情输出到 stderr）
-- [ ] TLS 支持（远程访问场景，通过反向代理配置）
-
----
-
-## 阶段 4: 配置灵活化 (v1.5.0) — ✅
+## 阶段 4: 配置灵活化 — ✅
 
 - [x] **动态 Argon2id 参数**: `config.toml` [core] 段自定义 m/t/p，V4 文件头存储参数确保向后兼容
 - [x] **多格式 list 输出**: `leolock list --format json|simple|table`
@@ -84,18 +50,23 @@ LeoLock 致力于成为 Linux/Unix 环境下最安全、最易用、且高性能
 
 ---
 
-## 阶段 5: 高级特性 (v1.6.0)
+## 阶段 5: 高级特性 — ✅
 
-- [ ] **临时分享链接**: `POST /api/v1/share` 创建一次性/限时解密链接，支持密码保护和下载次数限制
+- [x] **临时分享链接**: `POST /api/v1/share` 创建限时/限次/密码保护解密链接，`GET /api/v1/share/download` 公开下载
 - [x] **密钥轮换**: `POST /api/v1/auth/rotate-key` — 重新生成主密钥，可选批量重加密已有文件
 - [x] `POST /api/v1/backup` / `POST /api/v1/recover` — 通过 API 创建/恢复密钥备份
 - [x] `GET /api/v1/stats` — 统计信息（文件数/总大小/版本分布/可解密数）
+- [x] `GET /api/v1/metrics` — Prometheus 格式服务指标
 
 ---
 
-## 阶段 6: 平台扩展 (v2.0.0)
+## 下一步: 平台扩展 (v2.0.0)
 
-- [ ] **Web 管理面板**: 纯静态前端，拖拽上传加密、文件列表管理、分享链接管理
+- [ ] **Web 管理面板**: 纯静态前端（React/Vue/原生HTML），直接调用 API
+  - 文件列表 + 拖拽上传加密
+  - 加密文件 → 点击下载解密
+  - 分享链接创建与管理
+  - 仪表盘（文件数、总大小、最近活动）
 - [ ] **FUSE 挂载（实验性）**: 将加密目录挂载为虚拟文件系统，实时解密读取
 - [ ] **C FFI 绑定**: 提供 C ABI，支持 Python/Node.js 等语言调用核心加密逻辑
 - [ ] **硬件密钥支持**: 集成 PKCS#11，支持 YubiKey 等硬件令牌存储主密钥
@@ -120,9 +91,9 @@ LeoLock 致力于成为 Linux/Unix 环境下最安全、最易用、且高性能
 | v1.0.0 | 初始版本，AES-256-GCM + 基础配置 |
 | v1.0.3 | 文件名加密 (V2 格式)，list 命令 |
 | v1.1.0 | 流式加密 (V3)，AAD，zeroize，原子操作 |
-| v1.2.0 | 多线程并行，进度条，keyring/stdin/env 密码 |
-| v1.3.0 | HTTP API 服务，lock/unlock 模式，JWT 鉴权 |
+| v1.1.2 | 多线程并行，进度条，keyring/stdin/env 密码 |
+| v1.2.0 | HTTP API 服务，文件管理，分享链接，动态 Argon2id，V4 格式 |
 
 ---
 
-**最后更新:** 2026-05-24
+**最后更新:** 2026-05-25

@@ -48,6 +48,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/auth/rotate-key", post(routes::rotate_key))
         .route("/api/v1/backup", post(routes::backup))
         .route("/api/v1/recover", post(routes::recover))
+        .route("/api/v1/share", post(routes::create_share))
+        .route("/api/v1/share/delete", delete(routes::revoke_share))
         .route("/api/v1/unlock", post(routes::unlock))
         .route("/api/v1/lock", post(routes::lock))
         .route("/api/v1/encrypt", post(routes::encrypt))
@@ -63,15 +65,20 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/files/download", get(routes::download_file))
         .route("/api/v1/files/delete", delete(routes::delete_file))
         .route("/api/v1/stats", get(routes::stats))
+        .route("/api/v1/metrics", get(routes::metrics))
         .layer(axum_mw::from_fn_with_state(
             app_state.clone(),
             middleware::auth_middleware,
         ));
 
     let app = Router::new()
-        .merge(public)
         .merge(protected)
-        .layer(axum_mw::from_fn(middleware::logging_middleware))
+        .merge(public)
+        .route("/api/v1/share/download", get(routes::download_share))
+        .layer(axum_mw::from_fn_with_state(
+            app_state.clone(),
+            middleware::logging_middleware,
+        ))
         .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT))
         .layer(RequestBodyLimitLayer::new(MAX_REQUEST_BYTES))
         .layer(CorsLayer::permissive())

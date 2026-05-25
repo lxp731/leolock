@@ -894,6 +894,34 @@ pub(crate) struct StatsResponse {
     versions: std::collections::HashMap<String, usize>,
 }
 
+/// GET /api/v1/metrics — Prometheus 格式指标
+pub async fn metrics(State(state): State<Arc<AppState>>) -> Result<String, AppError> {
+    let uptime = state.start_time.elapsed().as_secs();
+    let locked = if state.is_unlocked() { 0u8 } else { 1u8 };
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "# HELP leolock_uptime_seconds Service uptime\n# TYPE leolock_uptime_seconds gauge\nleolock_uptime_seconds {}\n",
+        uptime
+    ));
+    out.push_str(&format!(
+        "# HELP leolock_service_locked Is service locked (1=locked)\n# TYPE leolock_service_locked gauge\nleolock_service_locked {}\n",
+        locked
+    ));
+    out.push_str("# HELP leolock_requests_total Total requests by path\n# TYPE leolock_requests_total counter\n");
+    let counts = state.request_count.lock().await;
+    let mut paths: Vec<_> = counts.iter().collect();
+    paths.sort_by_key(|(p, _)| *p);
+    for (path, count) in paths {
+        out.push_str(&format!(
+            "leolock_requests_total{{path=\"{}\"}} {}\n",
+            path, count
+        ));
+    }
+
+    Ok(out)
+}
+
 /// GET /api/v1/stats?path=/data
 pub async fn stats(
     State(state): State<Arc<AppState>>,
@@ -1206,4 +1234,144 @@ pub async fn recover(
         status: "recovered".into(),
         message: "✅ 密钥已从备份恢复，服务已解锁".into(),
     }))
+}
+
+// ─── 分享链接 ──────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub(crate) struct CreateShareRequest {
+    /// 文件 ID（base64 编码路径，从 /api/v1/files 列表获取）
+    file_id: String,
+    /// 过期时间（秒），默认 3600
+    expires_in: Option<u64>,
+    /// 最大下载次数，默认 1
+    max_downloads: Option<u32>,
+    /// 分享密码（可选）
+    password: Option<String>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct CreateShareResponse {
+    token: String,
+    url: String,
+    expires_at: String,
+    max_downloads: u32,
+}
+
+/// POST /api/v1/share — 创建分享链接（需要认证 + 服务已解锁）
+pub async fn create_share(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<CreateShareRequest>,
+) -> Result<Json<CreateShareResponse>, AppError> {
+    let _key = state.get_key().ok_or(AppError::Locked)?;
+    let file_path = decode_id(&body.file_id)?;
+
+    if !file_path.exists() {
+        return Err(AppError::BadRequest(format!(
+            "文件不存在: {}",
+            file_path.display()
+        )));
+    }
+
+    // 生成随机 token
+    let mut raw = [0u8; 32];
+    getrandom::getrandom(&mut raw)
+        .map_err(|e| AppError::CryptoError(format!("生成 token 失败: {}", e)))?;
+    use base64::Engine;
+    let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
+
+    let expires_in = body.expires_in.unwrap_or(3600);
+    let max_downloads = body.max_downloads.unwrap_or(1);
+
+    let info = crate::state::ShareInfo {
+        file_path: file_path.to_string_lossy().to_string(),
+        expires_at: std::time::Instant::now() + std::time::Duration::from_secs(expires_in),
+        max_downloads,
+        download_count: 0,
+        password: body.password.clone(),
+    };
+
+    state.shares.lock().await.insert(token.clone(), info);
+
+    let addr = "127.0.0.1:3000"; // 简化：实际应从请求头获取
+    Ok(Json(CreateShareResponse {
+        url: format!("http://{}/api/v1/share/download?token={}", addr, token),
+        token,
+        expires_at: chrono::Utc::now()
+            .checked_add_signed(chrono::TimeDelta::seconds(expires_in as i64))
+            .unwrap_or_default()
+            .to_rfc3339(),
+        max_downloads,
+    }))
+}
+
+/// GET /api/v1/share/{token} — 下载分享文件（公开，无需认证）
+pub async fn download_share(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Response, AppError> {
+    let token = params.get("token").cloned().unwrap_or_default();
+    let mut guard = state.shares.lock().await;
+    let info = guard
+        .get_mut(&token)
+        .ok_or_else(|| AppError::BadRequest("分享链接无效或已过期".into()))?;
+
+    // 检查过期
+    if std::time::Instant::now() > info.expires_at {
+        let _ = guard.remove(&token);
+        return Err(AppError::BadRequest("分享链接已过期".into()));
+    }
+
+    // 检查密码
+    if let Some(ref share_pw) = info.password {
+        let provided = params.get("password").cloned().unwrap_or_default();
+        if provided != *share_pw {
+            return Err(AppError::BadRequest("分享密码错误".into()));
+        }
+    }
+
+    // 检查下载次数
+    if info.download_count >= info.max_downloads {
+        let _ = guard.remove(&token);
+        return Err(AppError::BadRequest("下载次数已用完".into()));
+    }
+
+    let file_path = PathBuf::from(&info.file_path);
+    let file_data = std::fs::read(&file_path)?;
+
+    let key = state.get_key().ok_or(AppError::Locked)?;
+    let (original_name, decrypted) = CryptoManager::decrypt_data_v3(&file_data, &key)?;
+
+    info.download_count += 1;
+
+    // 用完自动清理
+    if info.download_count >= info.max_downloads {
+        let _ = guard.remove(&token);
+    }
+
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", original_name),
+        )
+        .body(Body::from(decrypted))
+        .unwrap())
+}
+
+/// DELETE /api/v1/share/{token} — 撤销分享（需要认证）
+pub async fn revoke_share(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<MessageResponse>, AppError> {
+    let token = params.get("token").cloned().unwrap_or_default();
+    let removed = state.shares.lock().await.remove(&token).is_some();
+    if removed {
+        Ok(Json(MessageResponse {
+            status: "revoked".into(),
+            message: "分享链接已撤销".into(),
+        }))
+    } else {
+        Err(AppError::BadRequest("分享链接不存在".into()))
+    }
 }

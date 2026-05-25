@@ -10,6 +10,7 @@ permissions:
 
 env:
   BINARY: leolock
+  API_BINARY: leolock-api
 
 jobs:
   build:
@@ -72,16 +73,19 @@ jobs:
           mkdir dist
 
           BIN=${{ env.BINARY }}
+          API_BIN=${{ env.API_BINARY }}
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             BIN="$BIN.exe"
+            API_BIN="$API_BIN.exe"
           fi
 
           cp target/${{ matrix.target }}/release/$BIN dist/
+          cp target/${{ matrix.target }}/release/$API_BIN dist/
 
           if [[ "${{ matrix.archive }}" == "zip" ]]; then
-            powershell Compress-Archive -Path dist/$BIN -DestinationPath $NAME.zip
+            powershell Compress-Archive -Path dist/* -DestinationPath $NAME.zip
           else
-            tar -czf $NAME.tar.gz -C dist $BIN
+            tar -czf $NAME.tar.gz -C dist $BIN $API_BIN
           fi
 
       - uses: actions/upload-artifact@v5
@@ -107,16 +111,16 @@ jobs:
           cargo install cargo-deb
           cargo install cargo-generate-rpm
 
-      - name: Build binary
+      - name: Build binaries
         run: cargo build --release
 
-      - name: Build deb
+      - name: Build deb (leolock)
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           cargo deb --no-build \
             --output target/${{ env.BINARY }}_${VERSION}_amd64.deb
 
-      - name: Build rpm
+      - name: Build rpm (leolock)
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           cargo generate-rpm \

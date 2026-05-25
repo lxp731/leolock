@@ -1,99 +1,85 @@
-## 📦 安装
+# LeoLock 安装指南
 
-### Debian/Ubuntu/RHEL/Fedora
+## 一键安装（推荐）
 
 ```bash
-# 在仓库下载 .deb 包或者 .rpm 包
+curl -fsSL https://raw.githubusercontent.com/lxp731/leolock/main/install.sh | bash
 ```
 
-### AUR
+自动检测系统架构（Linux/macOS, x86_64/ARM），从 GitHub Releases 下载最新版本。同时安装 `leolock`（CLI）和 `leolock-api`（API 服务）。
 
+**指定版本:**
+```bash
+LEOLOCK_VERSION=1.2.0 bash install.sh
+```
+
+**指定安装目录:**
+```bash
+INSTALL_DIR=~/.local/bin bash install.sh
+```
+
+## 包管理器安装
+
+### Debian/Ubuntu (.deb)
+```bash
+curl -fsSL https://github.com/lxp731/leolock/releases/latest/download/leolock_amd64.deb -o /tmp/leolock.deb
+sudo dpkg -i /tmp/leolock.deb
+```
+
+### RHEL/Fedora (.rpm)
+```bash
+sudo rpm -i https://github.com/lxp731/leolock/releases/latest/download/leolock.x86_64.rpm
+```
+
+### Arch Linux (AUR)
 ```bash
 yay -S leolock
 ```
 
-### 从源码编译
+### 从 Git 仓库
+```bash
+cargo install --git https://github.com/lxp731/leolock.git
+```
+
+> 仅安装 CLI 二进制。API 服务需源码编译。
+
+## 源码编译
 
 ```bash
-# 克隆项目
 git clone https://github.com/lxp731/leolock.git
 cd leolock
 
-# 编译发布版本
+# 编译发布版本（LTO + 最高优化）
 cargo build --release
 
-# 安装到系统（可选）
+# 安装 CLI
 sudo cp target/release/leolock /usr/local/bin/
+
+# 安装 API 服务
+sudo cp target/release/leolock-api /usr/local/bin/
+
+# 或安装到用户目录
+cp target/release/leolock target/release/leolock-api ~/.local/bin/
 ```
 
-### 生成 Tab 补全
-
-LeoLock 支持 5 种 shell 的自动补全：
+## 验证安装
 
 ```bash
-# 生成所有支持的补全脚本到当前目录
-leolock completions bash
-leolock completions zsh
-leolock completions fish
-leolock completions powershell
-leolock completions elvish
-
-# 或指定输出目录
-leolock completions bash -o ~/.bash_completion.d/
+leolock --version    # CLI 版本
+leolock-api --version  # API 服务版本（如果安装了）
 ```
 
-#### 安装补全脚本
+## Shell 补全
 
-**Bash**:
+LeoLock 支持 Bash、Zsh、Fish、PowerShell、Elvish：
+
 ```bash
+# 生成补全脚本
+leolock completions bash   -o ~/.bash_completion.d/
+leolock completions zsh    -o ~/.zsh/completions/
+leolock completions fish   -o ~/.config/fish/completions/
+
 # 系统级安装
 sudo leolock completions bash -o /usr/share/bash-completion/completions/
-
-# 用户级安装
-mkdir -p ~/.bash_completion.d
-leolock completions bash -o ~/.bash_completion.d/
-echo "source ~/.bash_completion.d/leolock.bash" >> ~/.bashrc
-source ~/.bashrc
+sudo leolock completions zsh  -o /usr/share/zsh/site-functions/
 ```
-
-**Zsh**:
-```bash
-# 系统级安装
-sudo leolock completions zsh -o /usr/share/zsh/site-functions/
-
-# 用户级安装
-mkdir -p ~/.zsh/completions
-leolock completions zsh -o ~/.zsh/completions/
-echo "fpath=(~/.zsh/completions \$fpath)" >> ~/.zshrc
-echo "autoload -Uz compinit && compinit" >> ~/.zshrc
-source ~/.zshrc
-```
-
-**Fish**:
-```bash
-# 系统级安装
-sudo leolock completions fish -o /usr/share/fish/vendor_completions.d/
-
-# 用户级安装
-mkdir -p ~/.config/fish/completions
-leolock completions fish -o ~/.config/fish/completions/
-```
-
-**PowerShell**:
-```bash
-# 生成补全脚本
-leolock completions powershell -o ~/.config/powershell/
-
-# 在 PowerShell 配置文件中添加
-# Add-Content -Path $PROFILE -Value ". ~/.config/powershell/_leolock.ps1"
-```
-
-**Elvish**:
-```bash
-# 生成补全脚本
-leolock completions elvish -o ~/.config/elvish/lib/
-
-# 在 Elvish 配置文件中添加
-# use leolock = ~/.config/elvish/lib/leolock.elv
-```
-

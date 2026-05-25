@@ -25,7 +25,11 @@ struct Claims {
 ///
 /// 记录方法、路径、状态码、耗时（毫秒）。
 /// 不记录 Authorization header 和请求体。
-pub async fn logging_middleware(req: Request, next: Next) -> Response {
+pub async fn logging_middleware(
+    State(state): State<Arc<AppState>>,
+    req: Request,
+    next: Next,
+) -> Response {
     let method = req.method().clone();
     let path = req.uri().path().to_string();
     let start = std::time::Instant::now();
@@ -34,6 +38,15 @@ pub async fn logging_middleware(req: Request, next: Next) -> Response {
 
     let status = response.status();
     let elapsed_ms = start.elapsed().as_millis();
+
+    // 更新请求计数（只统计路径，不区分方法）
+    state
+        .request_count
+        .lock()
+        .await
+        .entry(path.clone())
+        .and_modify(|c| *c += 1)
+        .or_insert(1);
 
     println!(
         "{} {} → {} ({}ms)",

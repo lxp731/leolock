@@ -18,16 +18,18 @@
 
 ### 1. 安装
 
-**从源码编译 (推荐):**
 ```bash
-git clone https://github.com/lxp731/leolock.git
-cd leolock
-cargo build --release
-# 使用 release 版本以获得最高性能
-sudo cp target/release/leolock /usr/local/bin/
+curl -fsSL https://raw.githubusercontent.com/lxp731/leolock/main/install.sh | bash
 ```
 
-**或使用包管理器:** 详见 [docs/INSTALLATION.md](docs/INSTALLATION.md)
+脚本自动检测系统架构，从 GitHub Releases 下载最新版本。
+
+**指定版本:**
+```bash
+LEOLOCK_VERSION=1.2.0 bash install.sh
+```
+
+**其他安装方式（源码编译 / deb / rpm / AUR / Cargo）:** 详见 [docs/INSTALLATION.md](docs/INSTALLATION.md)
 
 ### 2. 初始化
 ```bash
@@ -116,15 +118,7 @@ curl -X POST http://127.0.0.1:3000/api/v1/decrypt \
 
 **完整 CLI 命令参考:** 详见 [docs/COMMANDS.md](docs/COMMANDS.md)
 
-## 📦 安装选项
-
-### 从源码编译（推荐）
-```bash
-cargo build --release
-sudo cp target/release/leolock /usr/local/bin/
-```
-
-### 生成补全脚本
+## 📦 Shell 补全
 
 **Bash:**
 ```bash
@@ -176,18 +170,12 @@ leolock completions zsh -o ~/.zsh/completions/
 
 ## 📝 版本历史
 
-### 版本 1.5.0 (当前)
+### 版本 1.2.0 (当前)
 - **HTTP API 服务**: 新增 `leolock-api`，提供 REST API 远程加解密。
 - **Lock/Unlock 模式**: 密钥仅驻留内存，重启自动锁定，用完即擦。
 - **JWT 鉴权**: API Key → 短期 Token，Argon2id 哈希存储。
 - **文件管理 API**: 列出/查看/下载/删除加密文件。
 - **内存直通**: API 加解密无磁盘中转，直接操作内存缓冲区。
-
-### 版本 1.2.0
-- **多线程加速**: 引入 `rayon` 实现目录递归并行处理。
-- **体验升级**: 进度条 (`indicatif`) + 密码强度实时评估。
-- **元数据填充**: 消除文件名长度泄露风险。
-- **高级密码策略**: 支持环境变量 / keyring / stdin 加载密码。
 
 ### 版本 1.1.0
 - **性能质跃**: 引入流式加密重构，大幅提升大文件处理速度（14s/3GB）。
@@ -218,7 +206,7 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 ---
 
-**最后更新:** 2026-05-24  
-**项目状态:** ✅ CLI v1.5.0 + API 服务，稳定可用
+**最后更新:** 2026-05-25  
+**项目状态:** ✅ CLI v1.2.0 + API 服务，稳定可用
 
 **安全提示:** 请定期备份重要数据，加密不是数据丢失的保险措施。

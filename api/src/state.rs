@@ -20,6 +20,25 @@ pub struct AppState {
     pub argon2_p: u32,
 
     unlock_attempts: Mutex<HashMap<IpAddr, (u32, Instant)>>,
+
+    /// 启动时间（用于 uptime 指标）
+    pub start_time: Instant,
+
+    /// 请求计数：path → count
+    pub request_count: Mutex<HashMap<String, u64>>,
+
+    /// 分享链接存储：token → 分享信息
+    pub shares: Mutex<HashMap<String, ShareInfo>>,
+}
+
+/// 分享链接信息
+#[derive(Clone)]
+pub struct ShareInfo {
+    pub file_path: String,
+    pub expires_at: std::time::Instant,
+    pub max_downloads: u32,
+    pub download_count: u32,
+    pub password: Option<String>,
 }
 
 impl AppState {
@@ -42,6 +61,9 @@ impl AppState {
             argon2_t,
             argon2_p,
             unlock_attempts: Mutex::new(HashMap::new()),
+            start_time: Instant::now(),
+            request_count: Mutex::new(HashMap::new()),
+            shares: Mutex::new(HashMap::new()),
         }
     }
 

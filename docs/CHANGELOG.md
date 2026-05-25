@@ -1,34 +1,23 @@
 ## 📝 版本历史
 
-### 版本 1.5.0 (当前)
-- **动态 Argon2id 参数**: `[core]` 段可自定义 m_cost/t_cost/p_cost，V4 文件头存储参数。
-- **V4 文件格式**: 文件头追加 12 字节 Argon2id 参数，AAD 同步保护。V1-V3 文件自动使用默认参数。
-- **多格式 list 输出**: `leolock list --format json|simple|table` 三种格式。
-- **Config API**: `GET /api/v1/config` 查看配置（敏感字段脱敏），`PUT /api/v1/config` 更新。
-- **CLI 配置管理**: `leolock config set <key> <value>` 修改配置项，`add-forbidden` / `remove-forbidden` 管理危险路径列表。
+### 版本 1.2.0 (当前)
+- **HTTP API 服务**: 新增 `leolock-api` 子 crate，24 个 REST API 端点。
+- **Lock/Unlock 安全模式**: 密钥 Zeroizing 驻留内存，重启自动锁定。
+- **JWT 鉴权**: API Key (Argon2id 哈希) → 短期 Token (30min)，支持运行时轮换。
+- **加解密**: multipart 和原始二进制 stream 两种上传方式，内存直通无临时文件。
+- **文件管理**: 列出/查看/下载/删除加密文件，分页排序。
+- **V4 文件格式**: 文件头存储 Argon2id 参数，向后兼容 V1-V3。
+- **动态 Argon2id**: `[core]` 段自定义 m/t/p 成本参数。
+- **Config 结构重组**: `[program]/[core]/[auth]/[api]` 四段，旧格式自动迁移。
+- **CLI 配置管理**: `config set`、`add-forbidden`、`remove-forbidden`。
+- **多格式 list**: `--format json|simple|table`。
+- **分享链接**: 创建限时/限次/密码保护解密链接，公开下载无需 JWT。
+- **密钥轮换**: 重新生成主密钥 + 可选批量重加密。
+- **备份恢复 API**: 通过 API 创建/恢复密钥备份。
+- **统计指标**: `/stats` 文件统计 + `/metrics` Prometheus 格式。
+- **安全加固**: unlock 速率限制 (429)、请求日志、错误脱敏、并发控制。
 
-### 版本 1.4.0
-- **流式加解密端点**: `encrypt-stream` / `decrypt-stream`，接收原始二进制 body，无 MIME 解析开销。
-- **文件管理 API**: 列出/查看/下载/删除加密文件，支持分页和排序。
-- **API Key 轮换**: `POST /api/v1/auth/rotate-api-key`，密码验证后即时更换 Key，无需重启服务。
-- **解锁速率限制**: 每 IP 每分钟最多 5 次尝试，超限返回 429。
-- **请求日志中间件**: 记录方法/路径/状态码/耗时，不含敏感数据。
-- **错误响应脱敏**: 内部错误只返回通用消息，详情输出至 stderr。
-- **Config 结构重组**: 拆分为 `[program]/[core]/[auth]/[api]` 四个 TOML 段，旧格式自动迁移。
-- **服务端口可配**: 监听地址和端口写入 `[api]` 段，无需修改代码。
-
-### 版本 1.3.0
-- **HTTP API 服务**: 新增 `leolock-api` 子 crate，提供 REST API。
-- **Lock/Unlock 安全模式**: 密钥仅驻留内存，服务重启自动锁定，手动 lock 立即 zeroize 擦除。
-- **JWT 鉴权**: API Key (Argon2id 哈希存储) → 短期 JWT Token (30 分钟)。
-- **API 端点**: health / status / init / login / unlock / lock / encrypt / decrypt。
-- **文件管理 API**: 列出加密文件 (分页/排序)、查看详情、原地解密下载、安全删除。
-- **内存直通优化**: API 加解密不写临时文件，直接内存 Cursor → encrypt/decrypt_stream。
-- **Config 缓存**: AppState 启动时一次性加载配置，消除每个请求的文件 I/O。
-- **代码精简**: fileops.rs 去除 6 个重复方法 (557→237 行)，main.rs 提取公共密码读取逻辑。
-- **安全加固**: 请求体大小限制 (2GB)、并发控制 (8)、unlock 密码立即 zeroize。
-
-### 版本 1.2.0
+### 版本 1.1.2
 - **多线程并行加密**: 使用 `rayon` 库实现目录递归时的并行处理，大幅提升批量加密效率。
 - **交互增强**: 引入 `indicatif` 进度条与密码强度实时评估功能。
 - **元数据填充**: 加密文件名对齐填充，消除文件名长度泄露信息的潜在风险。

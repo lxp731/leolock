@@ -1,546 +1,340 @@
 # LeoLock API 参考
 
-> 版本: v1.3.0 | 基础地址: `http://127.0.0.1:3000`
+> 版本: v1.6.0 | 基础地址: `http://127.0.0.1:3000`
 
 ## 认证
 
-除 `/health`、`/status`、`/auth/login`、`/init` 外，所有端点需要 JWT Token：
+除公开端点外，所有端点需要 JWT Token（30 分钟有效）：
 
 ```bash
-# 获取 Token
-curl -s -X POST http://127.0.0.1:3000/api/v1/auth/login \
+export TOKEN=$(curl -s -X POST http://127.0.0.1:3000/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"api_key": "<你的API Key>"}'
+  -d '{"api_key": "<你的API Key>"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
-# 返回: {"token": "eyJ...", "expires_in": 1800, "token_type": "Bearer"}
-
-# 后续请求带上 Token
-# -H "Authorization: Bearer $TOKEN"
+# 后续请求: -H "Authorization: Bearer $TOKEN"
 ```
-
-Token 有效期 30 分钟，过期需重新登录。
 
 ---
 
-## 端点
+## 端点速查
 
-### 健康检查
+| 分类 | 端点 | 方法 | 认证 | 需解锁 |
+|------|------|------|------|--------|
+| 系统 | `/api/v1/health` | GET | 否 | — |
+| 系统 | `/api/v1/status` | GET | 否 | — |
+| 系统 | `/api/v1/metrics` | GET | JWT | — |
+| 系统 | `/api/v1/stats` | GET | JWT | — |
+| 认证 | `/api/v1/init` | POST | 否 | — |
+| 认证 | `/api/v1/auth/login` | POST | 否 | — |
+| 认证 | `/api/v1/auth/rotate-api-key` | POST | JWT | — |
+| 认证 | `/api/v1/auth/rotate-key` | POST | JWT | — |
+| 会话 | `/api/v1/unlock` | POST | JWT | — |
+| 会话 | `/api/v1/lock` | POST | JWT | — |
+| 加解密 | `/api/v1/encrypt` | POST | JWT | 是 |
+| 加解密 | `/api/v1/decrypt` | POST | JWT | 是 |
+| 加解密 | `/api/v1/encrypt-stream` | POST | JWT | 是 |
+| 加解密 | `/api/v1/decrypt-stream` | POST | JWT | 是 |
+| 文件 | `/api/v1/files` | GET | JWT | — |
+| 文件 | `/api/v1/files/get` | GET | JWT | — |
+| 文件 | `/api/v1/files/download` | GET | JWT | 是 |
+| 文件 | `/api/v1/files/delete` | DELETE | JWT | 是 |
+| 分享 | `/api/v1/share` | POST | JWT | 是 |
+| 分享 | `/api/v1/share/download` | GET | 否 | 是 |
+| 分享 | `/api/v1/share/delete` | DELETE | JWT | — |
+| 配置 | `/api/v1/config` | GET | JWT | — |
+| 配置 | `/api/v1/config` | PUT | JWT | — |
+| 备份 | `/api/v1/backup` | POST | JWT | 是 |
+| 备份 | `/api/v1/recover` | POST | JWT | — |
 
-```bash
-GET /api/v1/health
-```
+---
 
-不需要认证。
+## 系统信息
+
+### GET /api/v1/health
+无需认证。返回 `ok`。
 
 ```bash
 curl http://127.0.0.1:3000/api/v1/health
-# → ok
 ```
 
----
-
-### 服务状态
-
-```bash
-GET /api/v1/status
-```
-
-不需要认证。
+### GET /api/v1/status
+无需认证。返回服务初始化/锁定状态和版本号。
 
 ```bash
 curl -s http://127.0.0.1:3000/api/v1/status | python3 -m json.tool
 ```
-
-响应：
 ```json
-{
-    "initialized": true,
-    "locked": true,
-    "version": "1.3.0"
-}
+{ "initialized": true, "locked": true, "version": "1.6.0" }
 ```
 
-| 字段 | 说明 |
-|------|------|
-| `initialized` | 是否已完成初始化 |
-| `locked` | 是否处于锁定状态（需 unlock 才能加解密） |
-| `version` | 服务版本号 |
+### GET /api/v1/metrics
+需要认证。Prometheus 格式指标，可用于 Grafana 监控。
+
+```bash
+curl -s http://127.0.0.1:3000/api/v1/metrics -H "Authorization: Bearer $TOKEN"
+```
+```
+leolock_uptime_seconds 1234
+leolock_service_locked 0
+leolock_requests_total{path="/api/v1/encrypt"} 42
+```
+
+### GET /api/v1/stats
+需要认证。扫描目录下 `.leo` 文件的聚合统计。
+
+```bash
+curl -s "http://127.0.0.1:3000/api/v1/stats?path=/data" -H "Authorization: Bearer $TOKEN"
+```
+```json
+{ "total_files": 37, "encrypted_files": 7, "total_encrypted_size": 780,
+  "decryptable_count": 5, "versions": { "v4": 3, "v3": 2 } }
+```
 
 ---
 
-### 轮换 API Key
+## 认证与会话
 
-```bash
-POST /api/v1/auth/rotate-api-key
-```
-
-需要认证。API Key 泄漏时调用——用密码验证身份后生成新 Key，旧 Key 立即失效，无需重启服务。
-
-```bash
-curl -s -X POST http://127.0.0.1:3000/api/v1/auth/rotate-api-key \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"password": "你的密码"}' | python3 -m json.tool
-```
-
-响应：
-```json
-{
-    "status": "rotated",
-    "message": "🔑 API Key 已轮换，旧 Key 立即失效。请保存新 Key！",
-    "api_key": "<新的API Key>"
-}
-```
-
-> 需要 JWT + 密码双重验证。只知道 API Key 不知道密码无法轮换。
-
----
-
-### 初始化
-
-```bash
-POST /api/v1/init
-```
-
-首次使用或重置时调用，不需要认证。
+### POST /api/v1/init
+无需认证。首次使用时设置密码，生成密钥和 API Key。
 
 ```bash
 curl -s -X POST http://127.0.0.1:3000/api/v1/init \
-  -H 'Content-Type: application/json' \
-  -d '{"password": "你的密码"}' | python3 -m json.tool
+  -H 'Content-Type: application/json' -d '{"password": "你的密码"}'
 ```
-
-响应：
 ```json
-{
-    "status": "initialized",
-    "message": "✅ 初始化完成，备份已保存至 /home/user/leolock_key_backup_20260524_200000.enc",
-    "api_key": "439jgyemZrkIX0VTspNtJO5rt1yPTdKEtqs9l-6L_Mg"
-}
+{ "status": "initialized", "api_key": "<仅显示一次>" }
 ```
 
-> **注意**：`api_key` 仅在此时明文返回一次，务必妥善保存。
-
----
-
-### 解锁
+### POST /api/v1/auth/login
+无需认证。API Key 换取 JWT Token（30 分钟有效）。
 
 ```bash
-POST /api/v1/unlock
+curl -s -X POST http://127.0.0.1:3000/api/v1/auth/login \
+  -H 'Content-Type: application/json' -d '{"api_key": "..."}'
+```
+```json
+{ "token": "eyJ...", "expires_in": 1800, "token_type": "Bearer" }
 ```
 
-需要认证。输入密码，派生 AES 密钥并驻留内存。密钥不正确不会立即报错（真正的校验在加解密时发生）。
+### POST /api/v1/auth/rotate-api-key
+需要认证。API Key 泄漏时生成新 Key，旧 Key 立即失效。需 JWT + 密码双重验证。
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/api/v1/auth/rotate-api-key \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+  -d '{"password": "你的密码"}'
+```
+```json
+{ "status": "rotated", "api_key": "<新的API Key>" }
+```
+
+### POST /api/v1/auth/rotate-key
+需要认证。生成新盐值 + 主密钥。可选 `re_encrypt_path` 批量重加密已有文件。
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/api/v1/auth/rotate-key \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+  -d '{"password": "你的密码", "re_encrypt_path": "/data"}'
+```
+```json
+{ "status": "rotated", "re_encrypted": 3, "re_encrypt_errors": 0 }
+```
+
+### POST /api/v1/unlock
+需要认证。密码派生 AES 密钥驻留内存。每 IP 每分钟最多 5 次，超限返回 429。
 
 ```bash
 curl -s -X POST http://127.0.0.1:3000/api/v1/unlock \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"password": "你的密码"}' | python3 -m json.tool
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+  -d '{"password": "你的密码"}'
+```
+```json
+{ "status": "unlocked", "message": "🔓 服务已解锁" }
 ```
 
-响应：
+### POST /api/v1/lock
+需要认证。立即擦除内存中的密钥。
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/api/v1/lock -H "Authorization: Bearer $TOKEN"
+```
 ```json
-{
-    "status": "unlocked",
-    "message": "🔓 服务已解锁，密钥已加载到内存"
-}
+{ "status": "locked", "message": "🔒 服务已锁定" }
 ```
 
 ---
 
-### 锁定
+## 加解密
+
+### POST /api/v1/encrypt
+multipart 上传 → V4 加密 → 返回 `.leo` 文件。
 
 ```bash
-POST /api/v1/lock
-```
-
-需要认证。立即从内存中擦除密钥（zeroize），之后加解密返回 423。
-
-```bash
-curl -s -X POST http://127.0.0.1:3000/api/v1/lock \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
-```
-
-响应：
-```json
-{
-    "status": "locked",
-    "message": "🔒 服务已锁定，密钥已从内存擦除"
-}
-```
-
----
-
-### 加密
-
-```bash
-POST /api/v1/encrypt
-```
-
-需要认证 + 服务已解锁。multipart 上传文件，返回 V3 格式加密文件。
-
-```bash
-# 加密单个文件
 curl -s -X POST http://127.0.0.1:3000/api/v1/encrypt \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@document.pdf" \
-  -o document.leo
+  -H "Authorization: Bearer $TOKEN" -F "file=@document.pdf" -o document.leo
 ```
 
-加密流程：文件名用 AES-256-GCM 加密存入文件头 → 文件内容 1MB 分块流式加密 → AAD 元数据防篡改 → 输出 `.leo` 文件。
-
-响应头：
-```
-Content-Type: application/octet-stream
-Content-Disposition: attachment; filename="a3f8e2d1.leo"
-```
-
----
-
-### 解密
+### POST /api/v1/decrypt
+multipart 上传 `.leo` → 返回解密文件。
 
 ```bash
-POST /api/v1/decrypt
-```
-
-需要认证 + 服务已解锁。multipart 上传 `.leo` 文件，返回解密后的原始文件（文件名从 V3 头中恢复）。
-
-```bash
-# 解密文件
 curl -s -X POST http://127.0.0.1:3000/api/v1/decrypt \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@document.leo" \
-  -o document_decrypted.pdf
+  -H "Authorization: Bearer $TOKEN" -F "file=@document.leo" -o document.pdf
 ```
 
-响应头：
-```
-Content-Type: application/octet-stream
-Content-Disposition: attachment; filename="document.pdf"
-```
-
-解密成功与否取决于 unlock 时输入的密码是否正确。密码错误 → 解密失败返回 400。
-
----
-
-### 流式加密（原始二进制）
-
-```bash
-POST /api/v1/encrypt-stream
-```
-
-需要认证 + 服务已解锁。接收原始二进制 body（非 multipart），文件名通过 `X-Filename` 头指定。无 MIME 解析开销，比 multipart 端点更高效。
+### POST /api/v1/encrypt-stream
+原始二进制 body + `X-Filename` 头，无 MIME 解析开销，适合脚本。
 
 ```bash
 curl -s -X POST http://127.0.0.1:3000/api/v1/encrypt-stream \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-Filename: document.pdf" \
-  --data-binary @document.pdf \
-  -o document.leo
+  -H "Authorization: Bearer $TOKEN" -H "X-Filename: doc.pdf" \
+  --data-binary @doc.pdf -o doc.leo
 ```
 
-响应头：
-```
-Content-Type: application/octet-stream
-Content-Disposition: attachment; filename="a3f8e2d1.leo"
-```
-
----
-
-### 流式解密（原始二进制）
-
-```bash
-POST /api/v1/decrypt-stream
-```
-
-需要认证 + 服务已解锁。接收原始 V3 加密二进制 body，返回解密数据。原文件名通过 `Content-Disposition` 头返回。
+### POST /api/v1/decrypt-stream
+原始 V4 加密二进制 body → 解密返回。
 
 ```bash
 curl -s -X POST http://127.0.0.1:3000/api/v1/decrypt-stream \
-  -H "Authorization: Bearer $TOKEN" \
-  --data-binary @document.leo \
-  -o document_decrypted.pdf
+  -H "Authorization: Bearer $TOKEN" --data-binary @doc.leo -o doc.pdf
 ```
-
-响应头：
-```
-Content-Type: application/octet-stream
-Content-Disposition: attachment; filename="document.pdf"
-```
-
-> 与 multipart 端点的区别：stream 端点直接用 `--data-binary`（无 MIME 封装），适合脚本和自动化场景。multipart 端点用 `-F "file=@..."`，适合浏览器表单上传。
 
 ---
 
-### 文件列表
+## 文件管理
+
+### GET /api/v1/files
+列出加密文件（分页/排序）。锁定时原文件名显示 `[需要密钥查看]`。
 
 ```bash
-GET /api/v1/files
+curl -s "http://127.0.0.1:3000/api/v1/files?path=/data&sort=size_desc&page=1&per_page=50" \
+  -H "Authorization: Bearer $TOKEN"
 ```
+| 参数 | 必填 | 默认 | 说明 |
+|------|------|------|------|
+| `path` | 是 | — | 扫描目录 |
+| `page` / `per_page` | 否 | 1/50 | 分页 |
+| `sort` | 否 | — | `size_asc\|size_desc\|name_asc\|name_desc` |
 
-需要认证。列出指定目录下的 `.leo` 加密文件，支持分页和排序。锁定时也可调用（原文件名显示为 `[需要密钥查看]`）。
-
-```bash
-curl -s "http://127.0.0.1:3000/api/v1/files?path=/data/encrypted&sort=size_desc&page=1&per_page=50" \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
-```
-
-查询参数：
-
-| 参数 | 必填 | 默认值 | 说明 |
-|------|------|--------|------|
-| `path` | 是 | — | 要扫描的目录 |
-| `page` | 否 | 1 | 页码 |
-| `per_page` | 否 | 50 | 每页数量（1-200） |
-| `sort` | 否 | — | `size_asc` / `size_desc` / `name_asc` / `name_desc` |
-
-响应：
 ```json
-{
-  "items": [
-    {
-      "id": "L3RtcC90ZXN0X2dhbW1hLmxlbw",
-      "version": 3,
-      "encrypted_size": 108,
-      "original_name": "test_gamma.txt",
-      "decryptable": true
-    }
-  ],
-  "total": 11,
-  "page": 1,
-  "per_page": 50
-}
+{ "items": [{ "id": "L3RtcC9h...", "version": 4, "encrypted_size": 108,
+  "original_name": "report.pdf", "decryptable": true }], "total": 11, "page": 1 }
 ```
 
-| 字段 | 说明 |
-|------|------|
-| `id` | 文件唯一标识（用于后续 get/download/delete 操作） |
-| `version` | 加密格式版本（1/2/3） |
-| `encrypted_size` | 加密文件大小（字节） |
-| `original_name` | 原文件名（锁定时显示 `[需要密钥查看]`） |
-| `decryptable` | 当前密钥能否解密 |
+### GET /api/v1/files/get
+单个文件详情。
+
+```bash
+curl -s "http://127.0.0.1:3000/api/v1/files/get?id=L3RtcC9h..." \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### GET /api/v1/files/download
+原地解密下载。
+
+```bash
+curl -s "http://127.0.0.1:3000/api/v1/files/download?id=L3RtcC9h..." \
+  -H "Authorization: Bearer $TOKEN" -o restored.pdf
+```
+
+### DELETE /api/v1/files/delete
+安全删除加密文件。
+
+```bash
+curl -s -X DELETE "http://127.0.0.1:3000/api/v1/files/delete?id=L3RtcC9h..." \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 ---
 
-### 文件详情
+## 分享
+
+### POST /api/v1/share
+创建限时/限次/密码保护解密链接。
 
 ```bash
-GET /api/v1/files/get
+curl -s -X POST http://127.0.0.1:3000/api/v1/share \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+  -d '{"file_id": "L3RtcC9h...", "max_downloads": 3, "expires_in": 3600, "password": "s3cret"}'
 ```
+| 参数 | 必填 | 默认 | 说明 |
+|------|------|------|------|
+| `file_id` | 是 | — | 文件 ID |
+| `expires_in` | 否 | 3600 | 过期秒数 |
+| `max_downloads` | 否 | 1 | 最大下载次数 |
+| `password` | 否 | — | 分享密码 |
 
-需要认证。查看单个加密文件的详细信息。
-
-```bash
-curl -s "http://127.0.0.1:3000/api/v1/files/get?id=L3RtcC90ZXN0X2dhbW1hLmxlbw" \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
-```
-
-响应：
 ```json
-{
-  "id": "L3RtcC90ZXN0X2dhbW1hLmxlbw",
-  "path": "/tmp/test_gamma.leo",
-  "version": 3,
-  "encrypted_size": 108,
-  "original_name": "test_gamma.txt",
-  "decryptable": true,
-  "exists": true
-}
+{ "token": "BCtc...", "url": "http://127.0.0.1:3000/api/v1/share/download?token=BCtc...",
+  "expires_at": "2026-05-25T12:00:00Z", "max_downloads": 3 }
+```
+
+### GET /api/v1/share/download
+**公开端点。** 无需 JWT，通过分享链接下载解密文件。
+
+```bash
+curl "http://127.0.0.1:3000/api/v1/share/download?token=BCtc...&password=s3cret" -o doc.pdf
+```
+
+### DELETE /api/v1/share/delete
+撤销分享链接。
+
+```bash
+curl -s -X DELETE "http://127.0.0.1:3000/api/v1/share/delete?token=BCtc..." \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-### 下载解密
+## 配置管理
+
+### GET /api/v1/config
+需要认证。返回当前配置，敏感字段（salt、api_key_hash、jwt_secret）脱敏显示为 `***`。
 
 ```bash
-GET /api/v1/files/download
+curl -s http://127.0.0.1:3000/api/v1/config -H "Authorization: Bearer $TOKEN"
 ```
-
-需要认证 + 服务已解锁。原地解密 `.leo` 文件并以原始文件名流式返回。
-
-```bash
-curl -s "http://127.0.0.1:3000/api/v1/files/download?id=L3RtcC90ZXN0X2dhbW1hLmxlbw" \
-  -H "Authorization: Bearer $TOKEN" \
-  -o 还原的文件.txt
-```
-
-响应头：
-```
-Content-Type: application/octet-stream
-Content-Disposition: attachment; filename="原文件名.txt"
-```
-
----
-
-### 删除文件
-
-```bash
-DELETE /api/v1/files/delete
-```
-
-需要认证 + 服务已解锁。安全删除加密文件（覆写随机数据后删除）。
-
-```bash
-curl -s -X DELETE "http://127.0.0.1:3000/api/v1/files/delete?id=L3RtcC90ZXN0X2dhbW1hLmxlbw" \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
-```
-
-响应：
 ```json
-{
-  "status": "deleted",
-  "message": "已删除: /tmp/test_gamma.leo"
-}
+{ "program": { "forbidden_paths": [...], "max_file_size": 10737418240, ... },
+  "core": { "salt": "***", "argon2_m_cost": 19456, ... },
+  "auth": { "api_key_hash": "***", "jwt_secret": "***" },
+  "api": { "bind_address": "127.0.0.1", "port": 3000 } }
 ```
 
-> 只能删除 `.leo` 后缀的加密文件。服务锁定状态下删除返回 423。
-
----
-
-### 查看配置
-
-```bash
-GET /api/v1/config
-```
-
-需要认证。返回当前配置，安全字段脱敏显示为 `***`。
-
-```bash
-curl -s http://127.0.0.1:3000/api/v1/config \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
-```
-
-响应：
-```json
-{
-    "program": { "forbidden_paths": [...], "max_file_size": 10737418240, ... },
-    "core": { "salt": "***", "argon2_m_cost": 19456, "argon2_t_cost": 2, "argon2_p_cost": 1 },
-    "auth": { "api_key_hash": "***", "jwt_secret": "***" },
-    "api": { "bind_address": "127.0.0.1", "port": 3000 }
-}
-```
-
----
-
-### 更新配置
-
-```bash
-PUT /api/v1/config
-```
-
-需要认证。只能更新 `program` 和 `api` 段，不能通过 API 修改 `core` 和 `auth`。部分修改需重启服务生效。
+### PUT /api/v1/config
+需要认证。只能更新 `program` 和 `api` 段。部分修改需重启服务。
 
 ```bash
 curl -s -X PUT http://127.0.0.1:3000/api/v1/config \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"program": {"preserve_original_filename": true}, "api": {"port": 8443}}'
 ```
-
-响应：
 ```json
-{ "status": "updated", "message": "✅ 配置已更新（部分修改需重启服务生效）" }
+{ "status": "updated", "message": "✅ 配置已更新" }
 ```
 
 ---
 
-### 统计信息
+## 备份恢复
 
-```bash
-GET /api/v1/stats
-```
-
-需要认证。扫描目录下 `.leo` 文件，返回文件数、总大小、版本分布等聚合统计。
-
-```bash
-curl -s "http://127.0.0.1:3000/api/v1/stats?path=/data/encrypted" \
-  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
-```
-
-响应：
-```json
-{
-  "path": "/tmp",
-  "total_files": 37,
-  "encrypted_files": 7,
-  "total_encrypted_size": 780,
-  "decryptable_count": 5,
-  "versions": { "v4": 3, "v3": 2, "v1": 2 }
-}
-```
-
----
-
-### 密钥轮换
-
-```bash
-POST /api/v1/auth/rotate-key
-```
-
-需要认证。用密码验证身份后生成新盐值 + 新主密钥。可选 `re_encrypt_path` 参数批量重加密已有文件。
-
-```bash
-# 仅轮换密钥
-curl -s -X POST http://127.0.0.1:3000/api/v1/auth/rotate-key \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"password": "你的密码"}'
-
-# 轮换 + 重加密目录下所有 .leo 文件
-curl -s -X POST http://127.0.0.1:3000/api/v1/auth/rotate-key \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"password": "你的密码", "re_encrypt_path": "/data/encrypted"}'
-```
-
-响应：
-```json
-{
-  "status": "rotated",
-  "message": "🔑 主密钥已轮换，3 个文件已重加密",
-  "re_encrypted": 3,
-  "re_encrypt_errors": 0
-}
-```
-
-> 重加密是逐文件原子操作（解密→加密→删旧），每文件用不同密钥加密的会报错跳过。不需要重加密时可不传 `re_encrypt_path`。
-
----
-
-### 下载密钥备份
-
-```bash
-POST /api/v1/backup
-```
-
-需要认证 + 服务已解锁。生成加密密钥备份文件（`.enc`）并返回。可反复调用，每次生成带时间戳的新文件。
+### POST /api/v1/backup
+需要认证 + 已解锁。生成加密密钥备份文件。可反复调用。
 
 ```bash
 curl -s -X POST http://127.0.0.1:3000/api/v1/backup \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"password": "你的密码"}' \
-  -o leolock_backup_$(date +%Y%m%d).enc
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+  -d '{"password": "你的密码"}' -o leolock_backup.enc
 ```
 
----
-
-### 从备份恢复
-
-```bash
-POST /api/v1/recover
-```
-
-需要认证。上传备份文件 + 创建备份时的密码，恢复主密钥并即时生效。
+### POST /api/v1/recover
+需要认证。上传备份文件 + 密码，恢复主密钥并即时生效。
 
 ```bash
 curl -s -X POST http://127.0.0.1:3000/api/v1/recover \
   -H "Authorization: Bearer $TOKEN" \
-  -F "backup=@leolock_backup.enc" \
-  -F "password=创建备份时的密码"
+  -F "backup=@leolock_backup.enc" -F "password=创建备份时的密码"
 ```
-
-响应：
 ```json
 { "status": "recovered", "message": "✅ 密钥已从备份恢复，服务已解锁" }
 ```
@@ -550,42 +344,32 @@ curl -s -X POST http://127.0.0.1:3000/api/v1/recover \
 ## 完整调用流程
 
 ```bash
-# 0. 初次使用：初始化（已有配置可跳过）
-curl -s -X POST http://127.0.0.1:3000/api/v1/init \
-  -H 'Content-Type: application/json' \
-  -d '{"password": "你的密码"}'
-# 记下返回的 api_key！
-
-# 1. 登录获取 Token
+# 1. 登录
 export TOKEN=$(curl -s -X POST http://127.0.0.1:3000/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"api_key": "<你的API Key>"}' \
+  -H 'Content-Type: application/json' -d '{"api_key": "..."}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
 # 2. 解锁
 curl -s -X POST http://127.0.0.1:3000/api/v1/unlock \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"password": "你的密码"}'
 
 # 3. 加密
-curl -s -X POST http://127.0.0.1:3000/api/v1/encrypt \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@机密文档.pdf" \
-  -o 机密文档.leo
+curl -s -X POST http://127.0.0.1:3000/api/v1/encrypt-stream \
+  -H "Authorization: Bearer $TOKEN" -H "X-Filename: secret.pdf" \
+  --data-binary @secret.pdf -o secret.leo
 
-# 4. 浏览加密文件
+# 4. 查看文件列表
 curl -s "http://127.0.0.1:3000/api/v1/files?path=." \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 
-# 5. 下载解密
-curl -s "http://127.0.0.1:3000/api/v1/files/download?id=<从列表获取的id>" \
-  -H "Authorization: Bearer $TOKEN" \
-  -o 机密文档_还原.pdf
+# 5. 创建分享链接
+curl -s -X POST http://127.0.0.1:3000/api/v1/share \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+  -d '{"file_id": "...", "max_downloads": 5, "expires_in": 7200}'
 
-# 6. 用完后锁定
-curl -s -X POST http://127.0.0.1:3000/api/v1/lock \
-  -H "Authorization: Bearer $TOKEN"
+# 6. 锁定
+curl -s -X POST http://127.0.0.1:3000/api/v1/lock -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
@@ -595,18 +379,18 @@ curl -s -X POST http://127.0.0.1:3000/api/v1/lock \
 | 状态码 | 含义 | 触发场景 |
 |--------|------|----------|
 | 200 | 成功 | — |
-| 400 | 请求错误 | 密码太弱、API Key 无效、文件解析失败、解密密钥不正确、路径不存在 |
+| 400 | 请求错误 | 密码太弱、文件解析失败、解密密钥不正确、路径不存在 |
 | 401 | 未认证 | Token 缺失、无效或过期 |
-| 404 | 未找到 | 路由不存在（检查 URL 拼写） |
+| 404 | 未找到 | 路由不存在 |
 | 412 | 前置条件不满足 | 服务未初始化就调用 unlock |
-| 423 | 已锁定 | 服务 locked 状态下调用 encrypt/decrypt/download/delete |
-| 429 | 请求过多 | unlock 端点速率限制（每 IP 5次/分钟） |
-| 500 | 服务内部错误 | 内部异常（详情输出到 stderr，客户端只看到通用消息） |
+| 423 | 已锁定 | locked 状态下调用加解密/下载/删除 |
+| 429 | 请求过多 | unlock 速率限制（每 IP 5次/分钟） |
+| 500 | 内部错误 | 异常（详情输出 stderr，客户端只看到通用消息） |
 
 ## 安全说明
 
-- **默认仅监听 127.0.0.1**，不暴露公网。如需远程访问，应配置反向代理 + TLS
-- **密码不落盘不记日志**：unlock 后密码立即 zeroize，派生出的 32 字节密钥驻留内存
-- **重启自动锁定**：服务重启后密钥丢失，必须重新 unlock
+- **默认仅监听 127.0.0.1**，远程访问需配置反向代理 + TLS
+- **密码不落盘**：unlock 后密码立即 zeroize，密钥驻留内存
+- **重启自动锁定**：服务重启后密钥丢失
 - **API Key 存储为 Argon2id 哈希**：与密码同等安全级别
-- **加密为 V3 格式**：AES-256-GCM + AAD 元数据保护 + 文件名加密
+- **加密格式**：AES-256-GCM V4 + AAD 元数据保护 + 文件名加密 + Argon2id 参数存储

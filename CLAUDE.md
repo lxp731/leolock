@@ -26,12 +26,12 @@ LeoLock 是一个 Rust workspace，包含两个 crate：
 
 **`leolock-api`（api/）** — axum 0.7 HTTP API。依赖 `leolock` lib。
 - `state.rs` — `AppState` 持有加密密钥（RwLock）、JWT 密钥、盐值、API Key 哈希（RwLock，支持运行时轮换）。
-- `routes/mod.rs` — 所有路由处理函数。公开：health、status、login、init。受保护（JWT）：unlock、lock、encrypt、decrypt、files/*、auth/rotate-api-key。
+- `routes/mod.rs` — 所有路由处理函数（24 端点）。公开：health、status、login、init、share/download。受保护（JWT）：unlock、lock、encrypt、decrypt、files/*、auth/*、backup、recover、config、stats、metrics。
 - `middleware/mod.rs` — JWT 验证中间件（30 分钟过期）。
 
 ## 关键模式
 
-**Config 访问**：`Config::load()` 一次性读取 TOML。服务启动时将字段缓存到 `AppState`——路由处理函数**不得**再次调用 `Config::load()`。应通过 `state.salt`、`state.is_initialized` 等访问。
+**Config 访问**：`Config::load()` 一次性读取 TOML。服务启动时将字段缓存到 `AppState`——路由处理函数**不得**再次调用 `Config::load()`。应通过 `state.get_salt()`、`state.is_initialized` 等访问。
 
 **错误处理**：路由返回 `Result<T, AppError>`。`AppError` 映射到 HTTP 状态码：`Locked` → 423，`NotInitialized` → 412，`BadRequest` → 400，`CryptoError` → 400，`RateLimited` → 429，`Internal` → 500。`BjtError` 和 `std::io::Error` 通过 `From` 自动转换。
 
@@ -69,6 +69,7 @@ V4 是当前默认格式。加密时参数从 `[core]` 段读取并写入文件�
 
 ## 应该做的事
 
+- **不要自动提交代码**：完成阶段性任务后不要主动 commit，只有用户明确要求"提交代码"时才执行 git commit 和 git push。
 - 如果被要求提交代码，在提交之前请务必检查以下内容：
     1. 确保所有的代码都被格式化过。
     2. 确保所有的代码编译无报错，功能测试全部通过（可以在 /tmp 目录下进行构建测试文件）。
