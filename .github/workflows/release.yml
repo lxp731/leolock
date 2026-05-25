@@ -83,12 +83,12 @@ jobs:
           cp target/${{ matrix.target }}/release/$API_BIN dist/
 
           if [[ "${{ matrix.archive }}" == "zip" ]]; then
-            powershell Compress-Archive -Path dist/* -DestinationPath $NAME.zip
+            powershell -Command "Compress-Archive -Path dist\* -DestinationPath $NAME.zip"
           else
             tar -czf $NAME.tar.gz -C dist $BIN $API_BIN
           fi
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.target }}
           path: |
@@ -126,7 +126,7 @@ jobs:
           cargo generate-rpm \
             --output target/${{ env.BINARY }}-${VERSION}.x86_64.rpm
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: linux-packages
           path: |
@@ -143,7 +143,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Download artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           path: artifacts
 
