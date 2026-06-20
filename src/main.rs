@@ -72,12 +72,9 @@ enum ConfigCommands {
     /// 验证配置文件
     Validate,
 
-    /// 生成 API Key（用于 API 服务鉴权）
-    GenApiKey,
-
-    /// 设置配置项（api.port=3300）
+    /// 设置配置项（program.show_progress 等）
     Set {
-        /// 配置键，支持 api.port / program.show_progress 等
+        /// 配置键，支持 program.max_file_size / core.argon2_m_cost 等
         key: String,
         /// 配置值
         value: String,
@@ -197,7 +194,6 @@ fn main() -> Result<()> {
         Some(Commands::Config { subcommand }) => match subcommand {
             ConfigCommands::Show => handle_config_show(),
             ConfigCommands::Validate => handle_config_validate(),
-            ConfigCommands::GenApiKey => handle_gen_api_key(),
             ConfigCommands::Set { key, value } => handle_config_set(key, value),
             ConfigCommands::AddForbidden { path } => handle_config_add_forbidden(path),
             ConfigCommands::RemoveForbidden { path } => handle_config_remove_forbidden(path),
@@ -284,37 +280,14 @@ fn handle_init(save_to_keyring: bool) -> Result<()> {
     // 保存盐值到配置（设置盐值即表示已初始化）
     config.core.salt = Some(salt_base64);
 
-    // 生成 API Key 用于 API 服务鉴权
-    println!();
-    println!("🔑 生成 API Key（用于 API 服务鉴权）...");
-    let api_key = config.generate_api_key()?;
-    config.generate_jwt_secret()?;
-    println!("✅ API Key 已生成");
-
     println!();
     println!("📁 创建配置文件...");
 
-    // 保存配置（包含盐值、API Key 哈希、JWT Secret 和初始化状态）
+    // 保存配置（包含盐值和初始化状态）
     config.save()?;
     let config_path = Config::config_file_path().unwrap_or_default();
     println!("✅ 已生成配置文件: {}", config_path.display());
 
-    // ⚠️ 只有首次 init 才显示 API Key
-    println!();
-    println!("{}", "=".repeat(56));
-    println!("⚠️  重要：你的 API Key（仅显示一次，请立即保存！）");
-    println!("{}", "=".repeat(56));
-    println!();
-    println!("  {}", api_key);
-    println!();
-    println!("用这个 API Key 登录 API 服务：");
-    println!("  curl -X POST http://127.0.0.1:3000/api/v1/auth/login \\");
-    println!("    -H 'Content-Type: application/json' \\");
-    println!("    -d '{{\"api_key\": \"{}...\"}}'", &api_key[..8]);
-    println!();
-    println!("登录后会返回 Token，之后所有请求带上：");
-    println!("  -H 'Authorization: Bearer <token>'");
-    println!();
     println!("你可以编辑此文件来自定义设置:");
     println!(" - 危险路径列表 (forbidden_paths)");
     println!(" - 最大文件大小 (max_file_size)");
@@ -789,49 +762,11 @@ fn handle_recover(backup_path: &Path, cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-/// 生成 API Key（为已有配置补充 API 鉴权）
-fn handle_gen_api_key() -> Result<()> {
-    let mut config = Config::load()?;
-
-    if !config.is_initialized() {
-        return Err(BjtError::ConfigError(
-            "工具未初始化，请先运行 leolock init".into(),
-        ));
-    }
-
-    println!("🔑 生成 API Key...");
-    let api_key = config.generate_api_key()?;
-    config.generate_jwt_secret()?;
-    config.save()?;
-
-    println!();
-    println!("{}", "=".repeat(56));
-    println!("⚠️  你的 API Key（仅显示一次，请立即保存！）");
-    println!("{}", "=".repeat(56));
-    println!();
-    println!("  {}", api_key);
-    println!();
-    println!("用这个 API Key 登录 API 服务：");
-    println!("  curl -X POST http://127.0.0.1:3000/api/v1/auth/login \\");
-    println!("    -H 'Content-Type: application/json' \\");
-    println!("    -d '{{\"api_key\": \"{}...\"}}'", &api_key[..8]);
-    println!();
-    println!("登录后会返回 Token，之后所有请求带上：");
-    println!("  -H 'Authorization: Bearer <token>'");
-    Ok(())
-}
-
 /// 处理 config set 命令
 fn handle_config_set(key: &str, value: &str) -> Result<()> {
     let mut config = Config::load()?;
 
     match key {
-        "api.port" => {
-            config.api.port = value
-                .parse()
-                .map_err(|_| BjtError::ValidationError(format!("无效的端口号: {}", value)))?;
-        }
-        "api.bind_address" => config.api.bind_address = value.to_string(),
         "program.max_file_size" => {
             config.program.max_file_size = value
                 .parse()
@@ -867,7 +802,7 @@ fn handle_config_set(key: &str, value: &str) -> Result<()> {
         }
         _ => {
             return Err(BjtError::ValidationError(format!(
-                "不支持的配置项: {}\n支持: api.port, api.bind_address, program.max_file_size, \
+                "不支持的配置项: {}\n支持: program.max_file_size, \
                  program.default_extension, program.key_file_path, program.preserve_original_filename, \
                  program.show_progress, program.file_format_version, core.argon2_m_cost, \
                  core.argon2_t_cost, core.argon2_p_cost",

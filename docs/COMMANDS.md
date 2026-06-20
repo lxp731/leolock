@@ -4,7 +4,7 @@
 
 | 命令 | 说明 |
 |------|------|
-| `leolock init` | 初始化工具（创建配置、密钥、盐值、API Key） |
+| `leolock init` | 初始化工具（创建配置、密钥、盐值） |
 | `--save-to-keyring` | (Init 选项) 初始化后将密码保存到系统钥匙串 |
 | `leolock recover --backup <文件>` | 从备份文件恢复密钥 |
 
@@ -53,7 +53,6 @@
 |------|------|
 | `show` | 显示当前配置文件内容 |
 | `validate` | 验证配置文件的完整性和权限 |
-| `gen-api-key` | 为已有配置生成 API Key（用于 API 服务鉴权，仅显示一次） |
 | `set <key> <value>` | 修改指定配置项 |
 | `add-forbidden <path>` | 添加禁止加密的路径 |
 | `remove-forbidden <path>` | 移除禁止加密的路径 |
@@ -62,8 +61,6 @@
 
 | 键 | 类型 | 示例 |
 |------|------|------|
-| `api.port` | 整数 | `leolock config set api.port 3300` |
-| `api.bind_address` | 字符串 | `leolock config set api.bind_address 0.0.0.0` |
 | `program.max_file_size` | 整数 | `leolock config set program.max_file_size 1073741824` |
 | `program.default_extension` | 字符串 | `leolock config set program.default_extension .enc` |
 | `program.key_file_path` | 字符串 | `leolock config set program.key_file_path ~/.leolock.keys` |

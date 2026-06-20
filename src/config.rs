@@ -93,76 +93,15 @@ fn default_argon2_p() -> u32 {
     1
 }
 
-// ─── API 鉴权 ─────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthConfig {
-    /// API Key 的 Argon2id 哈希
-    #[serde(default)]
-    pub api_key_hash: Option<String>,
-
-    /// JWT 签名密钥（256位随机数 base64 编码）
-    #[serde(default)]
-    pub jwt_secret: Option<String>,
-}
-
-impl Default for AuthConfig {
-    fn default() -> Self {
-        Self {
-            api_key_hash: None,
-            jwt_secret: None,
-        }
-    }
-}
-
-// ─── API 服务 ─────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiConfig {
-    /// API 服务监听地址
-    #[serde(default = "default_bind_address")]
-    pub bind_address: String,
-
-    /// API 服务监听端口
-    #[serde(default = "default_port")]
-    pub port: u16,
-}
-
-impl Default for ApiConfig {
-    fn default() -> Self {
-        Self {
-            bind_address: default_bind_address(),
-            port: default_port(),
-        }
-    }
-}
-
 // ─── 顶层配置 ─────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub program: ProgramConfig,
 
     #[serde(default)]
     pub core: CoreConfig,
-
-    #[serde(default)]
-    pub auth: AuthConfig,
-
-    #[serde(default)]
-    pub api: ApiConfig,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            program: ProgramConfig::default(),
-            core: CoreConfig::default(),
-            auth: AuthConfig::default(),
-            api: ApiConfig::default(),
-        }
-    }
 }
 
 // ─── 旧版扁平格式（用于自动迁移）──────────────────────────────
@@ -191,14 +130,6 @@ struct FlatConfig {
     argon2_t_cost: Option<u32>,
     #[serde(default)]
     argon2_p_cost: Option<u32>,
-    #[serde(default)]
-    api_key_hash: Option<String>,
-    #[serde(default)]
-    jwt_secret: Option<String>,
-    #[serde(default)]
-    bind_address: Option<String>,
-    #[serde(default)]
-    port: Option<u16>,
 }
 
 impl From<FlatConfig> for Config {
@@ -221,14 +152,6 @@ impl From<FlatConfig> for Config {
                 argon2_m_cost: f.argon2_m_cost.unwrap_or_else(default_argon2_m),
                 argon2_t_cost: f.argon2_t_cost.unwrap_or_else(default_argon2_t),
                 argon2_p_cost: f.argon2_p_cost.unwrap_or_else(default_argon2_p),
-            },
-            auth: AuthConfig {
-                api_key_hash: f.api_key_hash,
-                jwt_secret: f.jwt_secret,
-            },
-            api: ApiConfig {
-                bind_address: f.bind_address.unwrap_or_else(default_bind_address),
-                port: f.port.unwrap_or_else(default_port),
             },
         }
     }
@@ -269,12 +192,6 @@ fn default_key_file_path() -> String {
 fn default_file_version() -> u8 {
     2
 }
-fn default_bind_address() -> String {
-    "127.0.0.1".into()
-}
-fn default_port() -> u16 {
-    3000
-}
 fn default_true() -> bool {
     true
 }
@@ -299,11 +216,7 @@ impl Config {
                 let content = fs::read_to_string(&path)?;
 
                 // 检测旧格式（无 [section] 头），自动迁移
-                if !content.contains("[program]")
-                    && !content.contains("[core]")
-                    && !content.contains("[auth]")
-                    && !content.contains("[api]")
-                {
+                if !content.contains("[program]") && !content.contains("[core]") {
                     if let Ok(flat) = toml::from_str::<FlatConfig>(&content) {
                         let config: Config = flat.into();
                         config.save_to(&path)?;
@@ -396,41 +309,6 @@ impl Config {
 
     pub fn is_initialized(&self) -> bool {
         self.core.salt.is_some()
-    }
-
-    #[allow(dead_code)]
-    pub fn has_api_key(&self) -> bool {
-        self.auth.api_key_hash.is_some()
-    }
-
-    // ─── API 鉴权 ──────────────────────────────────────────
-
-    pub fn generate_api_key(&mut self) -> Result<String> {
-        use base64::Engine;
-        let mut raw = [0u8; 32];
-        getrandom::getrandom(&mut raw)
-            .map_err(|e| BjtError::CryptoError(format!("生成 API Key 失败: {}", e)))?;
-        let api_key = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
-        let hash = crate::password::PasswordManager::hash_api_key(&api_key)?;
-        self.auth.api_key_hash = Some(hash);
-        Ok(api_key)
-    }
-
-    pub fn generate_jwt_secret(&mut self) -> Result<()> {
-        use base64::Engine;
-        let mut raw = [0u8; 32];
-        getrandom::getrandom(&mut raw)
-            .map_err(|e| BjtError::CryptoError(format!("生成 JWT 密钥失败: {}", e)))?;
-        self.auth.jwt_secret = Some(base64::engine::general_purpose::STANDARD.encode(raw));
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn verify_api_key(&self, key: &str) -> bool {
-        match &self.auth.api_key_hash {
-            Some(hash) => crate::password::PasswordManager::verify_api_key(key, hash),
-            None => false,
-        }
     }
 
     // ─── 安全检查 ──────────────────────────────────────────

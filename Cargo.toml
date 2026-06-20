@@ -1,22 +1,11 @@
-[workspace]
-members = [".", "api"]
-resolver = "2"
-
-[workspace.package]
+[package]
+name = "leolock"
 version = "1.2.0"
 edition = "2021"
+description = "LeoLock - 安全的文件加密解密工具"
 authors = ["Burgess Leo <liuxiaopeng731@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/burgessleo/leolock"
-
-[package]
-name = "leolock"
-version.workspace = true
-edition.workspace = true
-description = "LeoLock - 安全的文件加密解密工具"
-authors.workspace = true
-license.workspace = true
-repository.workspace = true
 
 [package.metadata.deb]
 maintainer = "Burgess Leo liuxiaopeng731@gmail.com"

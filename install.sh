@@ -76,23 +76,12 @@ install_binaries() {
     if [ "$EUID" -ne 0 ] && [ ! -w "$INSTALL_DIR" ]; then
         info "需要 sudo 权限写入 $INSTALL_DIR"
         sudo cp "$TMPDIR/leolock" "$INSTALL_DIR/"
-        if [ -f "$TMPDIR/leolock-api" ]; then
-            sudo cp "$TMPDIR/leolock-api" "$INSTALL_DIR/"
-        fi
     else
         cp "$TMPDIR/leolock" "$INSTALL_DIR/"
-        if [ -f "$TMPDIR/leolock-api" ]; then
-            cp "$TMPDIR/leolock-api" "$INSTALL_DIR/"
-        fi
     fi
 
     chmod +x "$INSTALL_DIR/leolock"
     ok "leolock → $INSTALL_DIR/leolock"
-
-    if [ -f "$INSTALL_DIR/leolock-api" ]; then
-        chmod +x "$INSTALL_DIR/leolock-api"
-        ok "leolock-api → $INSTALL_DIR/leolock-api"
-    fi
 }
 
 # ── 清理 ────────────────────────────────────────────────────────
@@ -106,14 +95,10 @@ verify() {
     if command -v leolock &>/dev/null; then
         leolock --version 2>/dev/null || ok "leolock 安装成功"
     fi
-    if command -v leolock-api &>/dev/null; then
-        info "API 服务可用: leolock-api"
-    fi
     echo ""
     echo "  快速开始:"
     echo "    leolock init          # 初始化"
     echo "    leolock encrypt <文件> # 加密"
-    echo "    leolock-api           # 启动 API 服务"
 }
 
 # ── 主流程 ──────────────────────────────────────────────────────

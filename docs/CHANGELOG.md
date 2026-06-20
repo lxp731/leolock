@@ -1,21 +1,11 @@
 ## 📝 版本历史
 
 ### 版本 1.2.0 (当前)
-- **HTTP API 服务**: 新增 `leolock-api` 子 crate，24 个 REST API 端点。
-- **Lock/Unlock 安全模式**: 密钥 Zeroizing 驻留内存，重启自动锁定。
-- **JWT 鉴权**: API Key (Argon2id 哈希) → 短期 Token (30min)，支持运行时轮换。
-- **加解密**: multipart 和原始二进制 stream 两种上传方式，内存直通无临时文件。
-- **文件管理**: 列出/查看/下载/删除加密文件，分页排序。
 - **V4 文件格式**: 文件头存储 Argon2id 参数，向后兼容 V1-V3。
 - **动态 Argon2id**: `[core]` 段自定义 m/t/p 成本参数。
-- **Config 结构重组**: `[program]/[core]/[auth]/[api]` 四段，旧格式自动迁移。
+- **Config 结构重组**: `[program]/[core]` 两段，旧格式自动迁移。
 - **CLI 配置管理**: `config set`、`add-forbidden`、`remove-forbidden`。
 - **多格式 list**: `--format json|simple|table`。
-- **分享链接**: 创建限时/限次/密码保护解密链接，公开下载无需 JWT。
-- **密钥轮换**: 重新生成主密钥 + 可选批量重加密。
-- **备份恢复 API**: 通过 API 创建/恢复密钥备份。
-- **统计指标**: `/stats` 文件统计 + `/metrics` Prometheus 格式。
-- **安全加固**: unlock 速率限制 (429)、请求日志、错误脱敏、并发控制。
 
 ### 版本 1.1.2
 - **多线程并行加密**: 使用 `rayon` 库实现目录递归时的并行处理，大幅提升批量加密效率。

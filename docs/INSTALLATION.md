@@ -6,7 +6,7 @@
 curl -fsSL https://raw.githubusercontent.com/lxp731/leolock/main/install.sh | bash
 ```
 
-自动检测系统架构（Linux/macOS, x86_64/ARM），从 GitHub Releases 下载最新版本。同时安装 `leolock`（CLI）和 `leolock-api`（API 服务）。
+自动检测系统架构（Linux/macOS, x86_64/ARM），从 GitHub Releases 下载最新版本。
 
 **指定版本:**
 ```bash
@@ -41,8 +41,6 @@ yay -S leolock
 cargo install --git https://github.com/lxp731/leolock.git
 ```
 
-> 仅安装 CLI 二进制。API 服务需源码编译。
-
 ## 源码编译
 
 ```bash
@@ -52,21 +50,17 @@ cd leolock
 # 编译发布版本（LTO + 最高优化）
 cargo build --release
 
-# 安装 CLI
+# 安装到系统目录
 sudo cp target/release/leolock /usr/local/bin/
 
-# 安装 API 服务
-sudo cp target/release/leolock-api /usr/local/bin/
-
 # 或安装到用户目录
-cp target/release/leolock target/release/leolock-api ~/.local/bin/
+cp target/release/leolock ~/.local/bin/
 ```
 
 ## 验证安装
 
 ```bash
-leolock --version    # CLI 版本
-leolock-api --version  # API 服务版本（如果安装了）
+leolock --version
 ```
 
 ## Shell 补全

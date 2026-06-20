@@ -1,15 +1,14 @@
 # LeoLock 🔒
 
-一个安全的文件加密解密工具，提供命令行和 HTTP API 两种使用方式，使用 AES-256-GCM 加密算法和 Argon2id 密码哈希。
+一个安全的个人文件加密解密命令行工具，使用 AES-256-GCM 加密算法和 Argon2id 密码哈希。
 
 ## ✨ 特性
 
 - **军用级加密**: AES-256-GCM 认证加密 + AAD 元数据保护，防止文件头篡改。
-- **HTTP API 服务**: 提供 REST API，支持远程加解密、文件管理、JWT 鉴权。
 - **安全密码哈希**: Argon2id 抗 GPU/ASIC 攻击。
-- **内存零残留**: `zeroize` 技术确保密码和密钥使用后立即擦除。API 服务重启自动锁定。
-- **极速大文件处理**: 流式 I/O，3GB 文件加密约 14 秒，API 端内存直通无磁盘中转。
-- **原子化操作**: “先写后换”机制，中途崩溃不损坏原始数据。
+- **内存零残留**: `zeroize` 技术确保密码和密钥使用后立即擦除。
+- **极速大文件处理**: 流式 I/O，3GB 文件加密约 14 秒。
+- **原子化操作**: "先写后换"机制，中途崩溃不损坏原始数据。
 - **双重加密模式**: 文件名加密（完全模式）或仅加密内容（快速模式）。
 - **递归处理**: 文件和文件夹批量加解密。
 - **备份恢复**: 初始化时自动创建加密密钥备份。
@@ -72,8 +71,6 @@ leolock list . --show-original
 
 ## 📖 基本命令
 
-### CLI
-
 | 命令 | 说明 |
 |------|------|
 | `leolock init` | 初始化工具 |
@@ -87,7 +84,6 @@ leolock list . --show-original
 | `leolock config set <key> <value>` | 修改配置项 |
 | `leolock config add-forbidden <path>` | 添加禁止加密路径 |
 | `leolock config remove-forbidden <path>` | 移除禁止加密路径 |
-| `leolock config gen-api-key` | 生成 API Key |
 
 **常用选项:**
 - `-k, --keep`: 保留源文件
@@ -95,44 +91,7 @@ leolock list . --show-original
 - `--show-original`: 显示原文件名（需要密码）
 - `--sort-by-size <asc/desc>`: 按文件大小排序
 
-### HTTP API
-
-```bash
-# 启动服务
-leolock-api
-
-# 登录
-curl -X POST http://127.0.0.1:3000/api/v1/auth/login \
-  -H 'Content-Type: application/json' -d '{"api_key": "..."}'
-
-# 加密
-curl -X POST http://127.0.0.1:3000/api/v1/encrypt \
-  -H "Authorization: Bearer $TOKEN" -F "file=@doc.pdf" -o doc.leo
-
-# 解密
-curl -X POST http://127.0.0.1:3000/api/v1/decrypt \
-  -H "Authorization: Bearer $TOKEN" -F "file=@doc.leo" -o doc.pdf
-```
-
-**完整 API 参考:** 详见 [docs/API.md](docs/API.md)
-
 **完整 CLI 命令参考:** 详见 [docs/COMMANDS.md](docs/COMMANDS.md)
-
-## 📦 Shell 补全
-
-**Bash:**
-```bash
-leolock completions bash -o ~/.bash_completion.d/
-```
-
-**Zsh:**
-```bash
-leolock completions zsh -o ~/.zsh/completions/
-```
-
-**其他shell:** 详见 [docs/INSTALLATION.md](docs/INSTALLATION.md)
-
-**详细安装指南:** 详见 [docs/INSTALLATION.md](docs/INSTALLATION.md)
 
 ## 🔐 安全特性
 
@@ -152,11 +111,10 @@ leolock completions zsh -o ~/.zsh/completions/
 
 ## 📁 文档目录
 
-- [docs/API.md](docs/API.md) - HTTP API 完整参考
 - [docs/INSTALLATION.md](docs/INSTALLATION.md) - 详细安装指南
 - [docs/COMMANDS.md](docs/COMMANDS.md) - 完整命令参考
-- [docs/SECURITY.md](docs/SECURITY.md) - 安全特性文档
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md) - 配置文件说明
+- [docs/SECURITY.md](docs/SECURITY.md) - 安全特性文档
 - [docs/WARNINGS.md](docs/WARNINGS.md) - 重要警告
 - [docs/STRUCTURE.md](docs/STRUCTURE.md) - 文件结构说明
 
@@ -171,11 +129,11 @@ leolock completions zsh -o ~/.zsh/completions/
 ## 📝 版本历史
 
 ### 版本 1.2.0 (当前)
-- **HTTP API 服务**: 新增 `leolock-api`，提供 REST API 远程加解密。
-- **Lock/Unlock 模式**: 密钥仅驻留内存，重启自动锁定，用完即擦。
-- **JWT 鉴权**: API Key → 短期 Token，Argon2id 哈希存储。
-- **文件管理 API**: 列出/查看/下载/删除加密文件。
-- **内存直通**: API 加解密无磁盘中转，直接操作内存缓冲区。
+- **V4 文件格式**: 文件头存储 Argon2id 参数，向后兼容 V1-V3。
+- **动态 Argon2id**: `[core]` 段自定义 m/t/p 成本参数。
+- **Config 结构重组**: `[program]/[core]` 两段，旧格式自动迁移。
+- **CLI 配置管理**: `config set`、`add-forbidden`、`remove-forbidden`。
+- **多格式 list**: `--format json|simple|table`。
 
 ### 版本 1.1.0
 - **性能质跃**: 引入流式加密重构，大幅提升大文件处理速度（14s/3GB）。
@@ -206,7 +164,7 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 ---
 
-**最后更新:** 2026-05-25  
-**项目状态:** ✅ CLI v1.2.0 + API 服务，稳定可用
+**最后更新:** 2026-06-20  
+**项目状态:** ✅ CLI v1.2.0，稳定可用
 
 **安全提示:** 请定期备份重要数据，加密不是数据丢失的保险措施。
