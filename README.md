@@ -1,5 +1,7 @@
 # LeoLock 🔒
 
+[Read English Readme](./docs/README_EN.md)
+
 一个安全的个人文件加密解密命令行工具，使用 AES-256-GCM 加密算法和 Argon2id 密码哈希。
 
 ## ✨ 特性
@@ -134,16 +136,6 @@ leolock list . --show-original
 - **Config 结构重组**: `[program]/[core]` 两段，旧格式自动迁移。
 - **CLI 配置管理**: `config set`、`add-forbidden`、`remove-forbidden`。
 - **多格式 list**: `--format json|simple|table`。
-
-### 版本 1.1.0
-- **性能质跃**: 引入流式加密重构，大幅提升大文件处理速度（14s/3GB）。
-- **内存安全**: 集成 `zeroize` 确保敏感数据在内存中无残留。
-- **完整性增强**: 升级 V3 文件格式，引入 AAD (附加认证数据) 保护元数据。
-- **鲁棒性增强**: 实现原子化文件写入，防止操作中断导致的数据损坏。
-
-### 版本 1.0.3
-- 简化密码管理，移除单独的密码哈希文件
-- 添加文件列表功能，支持排序和原文件名显示
 
 **完整版本历史:** 详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
 
